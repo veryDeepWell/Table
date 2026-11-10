@@ -13,7 +13,7 @@ function home() {
     </div>
     <div class="card-description">
       <div><h3>${game.name}</h3><span class="game-category">${game.category}</span></div>
-      <p>${game.description}</p><div class="card-meta"><span>♙ 2 игрока</span><span>◷ ${game.time}</span></div>
+      <p>${game.description}</p><div class="card-meta"><span>♙ ${game.players || '2 игрока'}</span><span>◷ ${game.time}</span></div>
     </div>
   </a>`).join('');
   shell(`<section id="catalog" class="catalog">

@@ -9,4 +9,6 @@ export const games = [
     time:'15–40 мин', description:'Ведите шашки домой и используйте каждый бросок.', load:() => import('../games/backgammon/view.js')},
   {id:'shogi', name:'Сёги', aliases:'сеги shogi 将棋', category:'Стратегия', variant:'Япония', art:'将', icons:['王','歩'],
     time:'30–90 мин', description:'Возвращайте взятые фигуры на доску под своим флагом.', load:() => import('../games/shogi/view.js')},
+  {id:'mahjong', name:'Маджонг', aliases:'mahjong риичи китайский', category:'Онлайн', variant:'Китайский и риичи', art:'麻', icons:['中','發'],
+    players:'4 игрока', time:'Онлайн', description:'Закрытый стол для четверых. Каждый видит только свою руку.', load:() => import('../games/mahjong/view.js')},
 ];
