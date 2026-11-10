@@ -11,4 +11,8 @@ export const games = [
     time:'30–90 мин', description:'Возвращайте взятые фигуры на доску под своим флагом.', load:() => import('../games/shogi/view.js')},
   {id:'mahjong', name:'Маджонг', aliases:'mahjong риичи китайский', category:'Онлайн', variant:'Китайский и риичи', art:'麻', icons:['中','發'],
     players:'4 игрока', time:'Онлайн', description:'Закрытый стол для четверых. Каждый видит только свою руку.', load:() => import('../games/mahjong/view.js')},
+  {id:'dots', name:'Точки', aliases:'dots kropki кропки', category:'Стратегия', variant:'На окружение', art:'◇', icons:['•','•'],
+    time:'10–25 мин', description:'Замыкайте контуры и окружайте точки соперника.', load:() => import('../games/dots/view.js')},
+  {id:'connect-four', name:'4 в ряд', aliases:'четыре в ряд connect four connect 4', category:'Стратегия', variant:'Классика', art:'⁙', icons:['●','●'],
+    time:'5–10 мин', description:'Бросайте фишки в столбцы и собирайте четыре подряд.', load:() => import('../games/connect-four/view.js')},
 ];
