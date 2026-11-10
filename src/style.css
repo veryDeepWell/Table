@@ -465,6 +465,7 @@
 .coordinate-go { --go-padding: 13px; --go-border: 8px; --field-inset: calc(var(--go-padding) + var(--go-border)); }
 .coordinate-go .board { padding: var(--go-padding); border-width: var(--go-border); }
 .go-last-position { color: #344b38; font-weight: 700; font-size: 11px; }
+.go-room-invite { display: block; width: 100%; margin-top: 7px; padding: 8px; font-size: 12px; }
 .save-note.save-warning { color: #8b3a26; font-size: 12px; font-weight: 600; }
 .go-backup { display: flex; flex-wrap: wrap; gap: 0 14px; margin: -12px 0 12px; }
 .go-backup .text-button { padding: 5px 0; color: var(--green); text-decoration: underline; }

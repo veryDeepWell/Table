@@ -1,7 +1,6 @@
 import {createRooms} from './rooms.mjs';
 
-export function roomApi({origin = process.env.TABLE_ORIGIN} = {}) {
-  const rooms = createRooms();
+export function roomApi({origin = process.env.TABLE_ORIGIN, rooms = createRooms()} = {}) {
   return async (req,res,path) => {
     const requestOrigin = req.headers.origin;
     const sameOrigin = requestOrigin === `http://${req.headers.host}` || requestOrigin === `https://${req.headers.host}`;
