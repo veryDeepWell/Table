@@ -1,5 +1,7 @@
 import {randomBytes} from 'node:crypto';
 import {deal, tick, apply, tableView} from './mahjong.mjs';
+import {expiredSeats} from './presence.mjs';
+import {addMessage,playerName} from './chat.mjs';
 
 const ttl = 12 * 60 * 60 * 1000;
 const roomCode = /^[A-F0-9]{10}$/;
@@ -10,13 +12,13 @@ export function createRooms({clock = Date.now, newGame = deal} = {}) {
   const rooms = new Map();
   const view = (room,seat) => ({
     code:room.code, mode:room.mode, seat, host:seat === 0,
-    names:room.seats.map(p => p.name), table:tableView(room.game,seat),
+    names:room.seats.map(p => p.name), table:tableView(room.game,seat), messages:room.messages,
   });
 
   return function request({method, path, token, body = {}}) {
     const now = clock();
     for (const [code,room] of rooms) if (now - room.updated > ttl) rooms.delete(code);
-    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+    const name = playerName(body?.name);
     if (method === 'POST' && path === '/rooms') {
       if (!['chinese','riichi'].includes(body?.mode) || !name || name.length > 24) {
         return error(400,'Выберите вариант и введите имя до 24 символов.');
@@ -25,7 +27,7 @@ export function createRooms({clock = Date.now, newGame = deal} = {}) {
       let code;
       do { code = randomBytes(5).toString('hex').toUpperCase(); } while (rooms.has(code));
       const key = randomBytes(32).toString('base64url');
-      const room = {code, mode:body.mode, seats:[{name,key}], updated:now};
+      const room = {code, mode:body.mode, seats:[{name,key}], messages:[], updated:now};
       rooms.set(code,room);
       return ok({key,...view(room,0)});
     }
@@ -43,16 +45,34 @@ export function createRooms({clock = Date.now, newGame = deal} = {}) {
     }
     const seat = room.seats.findIndex(p => p.key === token);
     if (seat < 0) return error(401,'У этого браузера нет ключа места за столом.');
+    const active = room.game && room.game.phase !== 'end';
+    if (active) {
+      const forfeits = action === 'leave' && method === 'POST'
+        ? [seat] : expiredSeats(room.lastSeen,now);
+      room.lastSeen[seat] = now;
+      if (forfeits.length) {
+        room.game.phase = 'end';
+        room.game.claim = null;
+        room.game.result = {forfeits,reason:'Поражение за выход из партии.'};
+        room.game.version++;
+      }
+    }
     tick(room.game,now);
     if (method === 'GET' && !action) return ok(view(room,seat));
+    if (method === 'POST' && action === 'leave') return ok(view(room,seat));
     if (method === 'POST' && action === 'start') {
       if (seat !== 0) return error(403,'Раздачу начинает создатель стола.');
       if (room.seats.length !== 4 || room.game && room.game.phase !== 'end') {
         return error(409,'Начать раздачу можно, когда за столом четверо и предыдущая раздача завершена.');
       }
       const version = (room.game?.version || 0) + 1;
+      if (room.game?.result?.forfeits) return error(409,'Для новой раздачи создайте другой стол.');
       room.game = newGame(room.mode);
+      room.lastSeen = room.seats.map(() => now);
       room.game.version = version;
+    } else if (method === 'POST' && action === 'chat') {
+      const problem = addMessage(room.messages,seat,room.seats[seat].name,body?.text,now);
+      if (problem) return error(400,problem);
     } else if (method === 'POST' && action === 'move') {
       if (!apply(room.game,seat,body?.id,body?.version,now)) return error(409,'Ход уже недоступен. Стол обновится.');
     } else return error(404,'Действие не найдено.');

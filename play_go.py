@@ -1,7 +1,6 @@
 """Start one invite-only Go room using the project's Node.js server."""
 
 import argparse
-import getpass
 import hmac
 import json
 import os
@@ -25,9 +24,11 @@ LOCAL_URL = re.compile(r"http://127\.0\.0\.1:\d+\b")
 
 
 def start(args, processes, *, env=None):
+    group = {"creationflags":subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session":True}
     process = subprocess.Popen(
         args, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
+        **group,
     )
     processes.append(process)
     messages = Queue()
@@ -68,22 +69,27 @@ def stop(process):
         process.wait()
 
 def read_setup():
-    value = (getpass.getpass("Вставьте код запуска с сайта: ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
-    match = re.fullmatch(r"go-setup-v1\.(9|13|19)\.([0-9a-f]{64})\.(.+)", value)
+    value = input("Вставьте код запуска с сайта и нажмите Enter: ").strip()
+    match = re.fullmatch(r"table-setup-v1\.([a-z-]+)\.(9|13|19|chinese|riichi|standard)\.([0-9a-f]{64})\.(.+)", value)
     if not match:
-        raise ValueError("Некорректный код запуска. Скопируйте его целиком с сайта.")
-    size, secret, origin = match.groups()
+        legacy = re.fullmatch(r"go-setup-v1\.(9|13|19)\.([0-9a-f]{64})\.(.+)", value)
+        if not legacy:
+            raise ValueError("Некорректный код запуска. Скопируйте его целиком с сайта.")
+        match = ("", *legacy.groups())
+    else:
+        match = match.groups()
+    game, option, secret, origin = match
     parsed = urlsplit(origin)
     if (origin != f"{parsed.scheme}://{parsed.netloc}" or not parsed.hostname
             or parsed.username is not None or parsed.port == 0
             or (parsed.scheme != "https"
                 and not (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")))):
         raise ValueError("Код запуска должен содержать HTTPS-адрес сайта.")
-    return size, secret, origin
+    return game, option, secret, origin
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Создать комнату го на двоих.")
+    parser = argparse.ArgumentParser(description="Запустить сетевую комнату сайта «За столом».")
     parser.add_argument("--size", type=int, choices=[9, 13, 19], default=9)
     parser.add_argument("--local", action="store_true", help="Проверка на одном компьютере, без туннеля.")
     parser.add_argument("--no-browser", action="store_true", help="Показать приватную ссылку ведущего в терминале.")
@@ -99,12 +105,15 @@ def main():
                      "Для проверки на этом компьютере запустите с --local.")
 
     processes = []
+    local = None
     try:
-        size, host_key, site = read_setup() if args.setup else (str(args.size), secrets.token_urlsafe(32), "")
+        game, option, host_key, site = read_setup() if args.setup else ("", str(args.size), secrets.token_urlsafe(32), "")
+        api = "/api/match" if game else "/api/go"
         env = {**os.environ, "HOST":"127.0.0.1", "PORT":"0",
-               "TABLE_GO_HOST_KEY":host_key, "TABLE_GO_SIZE":size, "TABLE_ORIGIN":site}
+               "TABLE_GO_HOST_KEY":host_key, "TABLE_GO_SIZE":option if game in ("","go") else "9",
+               "TABLE_MATCH_GAME":game, "TABLE_MATCH_OPTION":option, "TABLE_ORIGIN":site}
         local = wait_for_url(start([node, "scripts/serve.mjs"], processes, env=env), LOCAL_URL, 10)
-        request = Request(local + "/api/go/host", headers={"Authorization":"Bearer " + host_key})
+        request = Request(local + api + "/host", headers={"Authorization":"Bearer " + host_key})
         with urlopen(request, timeout=5) as response:
             code = json.load(response)["code"]
         origin = local
@@ -114,9 +123,11 @@ def main():
                 start([tunnel, "tunnel", "--url", local], processes), QUICK_URL, 40,
             )
         if args.setup:
-            proof = hmac.digest(host_key.encode(), (origin + "/" + code).encode(), "sha256").hex()
+            signed = (game + "/" if game else "") + origin + "/" + code
+            proof = hmac.digest(host_key.encode(), signed.encode(), "sha256").hex()
+            prefix = f"table-room-v1.{game}" if game else "go-room-v1"
             print("Код комнаты для вас и друга:", flush=True)
-            print(f"go-room-v1.{code}.{proof}.{origin}", flush=True)
+            print(f"{prefix}.{code}.{proof}.{origin}", flush=True)
         else:
             invite = origin + "/#/games/go/room/" + code
             host = invite + "/" + host_key
@@ -128,6 +139,16 @@ def main():
             time.sleep(.5)
         raise RuntimeError("Сервер или туннель остановился.")
     except KeyboardInterrupt:
+        if local:
+            try:
+                leave = Request(local + api + "/leave", data=b"{}",
+                                headers={"Authorization":"Bearer " + host_key, "Content-Type":"application/json"})
+                with urlopen(leave, timeout=2) as response:
+                    forfeits = json.load(response).get("forfeits", [])
+                if 1 in forfeits:
+                    time.sleep(2)  # Give the other player time to receive the result.
+            except (KeyboardInterrupt, OSError, ValueError):
+                pass
         return 0
     except (EOFError, OSError, RuntimeError, ValueError) as error:
         print("Не удалось запустить комнату:", error, file=sys.stderr)

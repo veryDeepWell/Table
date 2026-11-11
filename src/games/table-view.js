@@ -1,6 +1,8 @@
 import {label} from './grid.js';
 import {alphabet, coordinates, ranks} from './coordinates.js';
 import {loadSave, saveGame, saveMessage} from './local-save.js';
+import {forfeitMessage, inMatch, mountMatch} from '../online/client.js';
+import {mountLobby} from '../online/lobby.js';
 
 export function pieceMarkup(game, piece) {
   const type = piece.type.replace('+', '');
@@ -38,6 +40,9 @@ function renderRules(rules, source) {
 }
 
 export function renderTable(root, game) {
+  const network = inMatch(game.id);
+  let match;
+  let connection;
   const key = `table:${game.id}:v1`;
   let state = game.engine.create();
   let history = [];
@@ -52,7 +57,7 @@ export function renderTable(root, game) {
     <a href="#/" class="back">← Все игры</a>
     <div class="eyebrow">СТРАТЕГИЯ / ${game.variant}</div>
     <h1>${game.name}<em>${game.subtitle}</em></h1>
-    <p>${game.description}</p><div class="intro-meta"><span>♙ 2 игрока</span><span>◉ На одном устройстве</span></div>
+    <p>${game.description}</p><div class="intro-meta"><span>♙ 2 игрока</span><span>◉ ${network ? 'Сетевая партия' : 'На одном устройстве'}</span></div>
   </section>
   <div class="game-tabs"><a href="#play">Играть <span>↗</span></a><a href="#rules">Правила и примеры <span>↓</span></a></div>
   <section id="play" class="play-section classic-play">
@@ -62,15 +67,15 @@ export function renderTable(root, game) {
       <div class="board-caption">${game.hint}</div>
     </div>
     <aside class="game-panel classic-panel">
-      <span class="eyebrow">ЛОКАЛЬНАЯ ПАРТИЯ</span>
+      <span class="eyebrow">${network ? 'СЕТЕВАЯ ПАРТИЯ' : 'ЛОКАЛЬНАЯ ПАРТИЯ'}</span>
       <h2 data-turn></h2>
       <p id="status" role="status" aria-live="polite"></p>
       <div data-choices></div>
       <div class="game-actions">
-        <button data-action="undo" class="button secondary">↶ Отменить действие</button>
-        <button data-action="restart" class="text-button">Начать заново</button>
+        <button data-action="undo" class="button secondary" ${network ? 'hidden' : ''}>↶ Отменить действие</button>
+        <button data-action="restart" class="text-button" ${network ? 'hidden' : ''}>Начать заново</button>
       </div>
-      <p class="save-note" data-save-note role="status"></p>
+      <p class="save-note" data-save-note role="status" ${network ? 'hidden' : ''}></p>
       <a href="#rules" class="text-link">К правилам ↓</a>
     </aside>
   </section>${renderRules(game.rules,game.source)}`;
@@ -78,29 +83,41 @@ export function renderTable(root, game) {
   const board = root.querySelector('[data-game-board]');
   const choices = root.querySelector('[data-choices]');
   const saveNote = root.querySelector('[data-save-note]');
+  const playSection = root.querySelector('#play');
+  if (!network) mountLobby(playSection,game.id);
+  const canMove = () => !network || Boolean(match?.ready && !match.ended && match.side === state.turn);
   let legal = [];
 
   function refresh() {
     if (state.chain != null) selected = state.chain;
-    legal = game.engine.moves(state);
+    legal = canMove() ? game.engine.moves(state) : [];
     saveNote.textContent = saveMessage(saveLocation);
     saveNote.classList.toggle('save-warning',saveLocation === 'memory' || saveLocation === 'sessionStorage');
     const result = state.result;
     const side = game.sides[state.turn - 1];
-    root.querySelector('[data-turn]').textContent = result
+    const forfeited = match && forfeitMessage(match);
+    root.querySelector('h2[data-turn]').textContent = forfeited ? 'Партия завершена'
+      : network && !match?.ready ? 'Ожидаем игроков'
+      : result
       ? (result.winner ? `${game.sides[result.winner - 1]} победили` : 'Ничья')
-      : state.opening ? 'Первый бросок' : `Ходят ${side.toLowerCase()}`;
-    root.querySelector('#status').textContent = result?.reason || game.status(state);
+      : state.opening ? (network ? (canMove() ? 'Ваш первый бросок' : 'Первый бросок соперника') : 'Первый бросок')
+      : network ? (canMove() ? 'Ваш ход' : 'Ходит ' + match.names[state.turn - 1]) : `Ходят ${side.toLowerCase()}`;
+    root.querySelector('#status').textContent = forfeited || result?.reason || (canMove() ? game.status(state) : '');
     board.innerHTML = (game.board || gridBoard)(game,state,legal,selected);
     const options = pending.length
       ? `<div class="move-options" aria-label="Варианты хода">${pending.map((move,i) =>
         `<button class="button secondary" data-choice="${i}">${game.choice(move)}</button>`).join('')}
         <button class="text-button" data-action="cancel">Назад</button></div>`
       : game.controls?.(state,selected,legal) || '';
-    const claim = game.engine.claim?.(state);
+    const claim = canMove() && (network ? state.canClaim : game.engine.claim?.(state));
     choices.innerHTML = options + (claim && !pending.length
       ? '<button class="button secondary" data-action="claim">Заявить ничью</button>' : '');
     root.querySelector('[data-action="undo"]').disabled = !history.length;
+    if (network) {
+      choices.querySelector('[data-action="finish"]')?.remove();
+      const roll = choices.querySelector('[data-action="roll"]');
+      if (roll) roll.disabled = !canMove();
+    }
   }
 
   function commit(next) {
@@ -113,9 +130,14 @@ export function renderTable(root, game) {
     refresh();
   }
 
-  root.querySelector('#play').onclick = event => {
+  function play(move) {
+    if (network) connection.send({action:'play',index:legal.indexOf(move)});
+    else commit(game.engine.play(state,move));
+  }
+
+  playSection.onclick = event => {
     const button = event.target.closest('button');
-    if (!button || button.disabled) return;
+    if (!button || button.disabled || !canMove()) return;
     if (button.dataset.action === 'undo') {
       if (!history.length) return;
       state = history.pop();
@@ -132,10 +154,12 @@ export function renderTable(root, game) {
     } else if (button.dataset.action === 'cancel') {
       pending = [];
     } else if (button.dataset.action === 'claim') {
+      if (network) { connection.send({action:'claim'}); return; }
       const reason = game.engine.claim(state);
       if (reason) commit({...state,result:{reason}});
       return;
     } else if (button.dataset.action === 'roll') {
+      if (network) { connection.send({action:'roll'}); return; }
       commit(game.roll(state));
       return;
     } else if (button.dataset.action === 'finish') {
@@ -144,7 +168,7 @@ export function renderTable(root, game) {
       }
       return;
     } else if (button.dataset.choice !== undefined) {
-      commit(game.engine.play(state,pending[Number(button.dataset.choice)]));
+      play(pending[Number(button.dataset.choice)]);
       return;
     } else if (button.dataset.drop) {
       selected = button.dataset.drop;
@@ -154,7 +178,7 @@ export function renderTable(root, game) {
       const candidates = legal.filter(move => move.to === point &&
         (game.placement || move.from === selected || move.drop === selected));
       if (candidates.length === 1) {
-        commit(game.engine.play(state,candidates[0]));
+        play(candidates[0]);
         return;
       }
       pending = candidates;
@@ -162,5 +186,15 @@ export function renderTable(root, game) {
     } else return;
     refresh();
   };
+  if (network) {
+    state = game.engine.create();
+    connection = mountMatch(root,game.id,next => {
+      match = next;
+      state = next.state;
+      selected = null;
+      pending = [];
+      refresh();
+    });
+  }
   refresh();
 }

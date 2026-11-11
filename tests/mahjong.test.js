@@ -3,6 +3,26 @@ import assert from 'node:assert/strict';
 import {createRooms} from '../server/rooms.mjs';
 import {actions, apply, claimMs, deal, tick} from '../server/mahjong.mjs';
 import {shapes, yaku} from '../server/mahjong-hands.mjs';
+import {disconnectMs} from '../server/presence.mjs';
+
+test('online Mahjong: a disconnected player loses without scoring the round', () => {
+  let now = 0;
+  const request = createRooms({clock:() => now});
+  const post = (path,body,token) => request({method:'POST',path,body,token});
+  const host = post('/rooms',{mode:'chinese',name:'East'}).body;
+  const path = '/rooms/' + host.code;
+  const guests = ['South','West','North'].map(name => post(path + '/join',{name}).body);
+  post(path + '/start',{},host.key);
+  const get = token => request({method:'GET',path,token}).body.table;
+  now = disconnectMs - 1;
+  for (const player of [host,...guests.slice(1)]) assert.notEqual(get(player.key).phase,'end');
+  now++;
+  const result = get(host.key);
+  assert.equal(result.phase,'end');
+  assert.deepEqual(result.result.forfeits,[1]);
+  assert.equal(result.result.winner,undefined);
+  assert.deepEqual(result.actions,[]);
+});
 
 for (const mode of ['chinese','riichi']) {
   test(`${mode}: each key sees only its own hand and cannot play another seat's turn`, () => {

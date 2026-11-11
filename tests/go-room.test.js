@@ -1,6 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGoRoom} from '../server/go-room.mjs';
+import {disconnectMs} from '../server/presence.mjs';
+
+test('online Go: leaving or missing heartbeats ends the game without scoring', () => {
+  for (const explicit of [true,false]) {
+    let now = 0;
+    const host = 'test-host';
+    const request = createGoRoom(host,9,() => now);
+    const get = (path,token) => request({method:'GET',path,token});
+    const {code} = get('/go/host',host).body;
+    const {key} = request({method:'POST',path:`/go/${code}/join`}).body;
+    now = disconnectMs - 1;
+    assert.equal(get('/go',host).body.ended,false);
+    if (explicit) request({method:'POST',path:'/go/leave',token:key});
+    else now++;
+    const result = get('/go',host).body;
+    assert.equal(result.ended,true);
+    assert.deepEqual(result.forfeits,[2]);
+    assert.equal(result.points,null);
+  }
+});
 
 test('online Go: private seats, shared state, stale moves and scoring', () => {
   const hostKey = 'test-host';

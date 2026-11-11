@@ -1,4 +1,8 @@
 import {apiOrigin} from './config.js';
+import {inMatch,mountMatch} from '../../online/client.js';
+import {mountLobby} from '../../online/lobby.js';
+import {mountChat} from '../../online/chat.js';
+import {playerName} from '../../online/profile.js';
 
 const route = '#/games/mahjong';
 const online = apiOrigin !== null;
@@ -48,6 +52,7 @@ async function request(path, key, body) {
     headers:{...(key && {Authorization:`Bearer ${key}`}), ...(body !== undefined && {'Content-Type':'application/json'})},
     body:body === undefined ? undefined : JSON.stringify(body),
     cache:'no-store', signal:AbortSignal.timeout(8000),
+    keepalive:path.endsWith('/leave'),
   });
   const data = await response.json();
   if (!response.ok) throw Object.assign(new Error(data.error),{status:response.status});
@@ -70,14 +75,18 @@ function roomMarkup(room) {
   let title = `За столом ${room.names.length} из 4`;
   if (table?.phase === 'discard') title = table.turn === room.seat ? 'Ваш ход' : `Ходит ${room.names[table.turn]}`;
   if (table?.phase === 'claim') title = 'Последний сброс';
-  if (table?.phase === 'end') title = table.result.winner === undefined ? table.result.reason : `${room.names[table.result.winner]} выиграл(а)`;
+  if (table?.phase === 'end') {
+    const {forfeits,winner,reason} = table.result;
+    title = forfeits ? `Поражение за выход: ${forfeits.map(seat => room.names[seat]).join(', ')}`
+      : winner === undefined ? reason : `${room.names[winner]} выиграл(а)`;
+  }
   const moves = table?.actions || [];
   const discards = new Set(moves.filter(m => m.kind === 'discard').map(m => m.tile));
   const special = moves.filter(m => m.kind !== 'discard');
   const note = table?.result?.kind ? `${actions[table.result.kind]}${table.result.yaku.length ? ' · ' + table.result.yaku.join(', ') : ''}
     ${room.mode === 'riichi' ? ' · Дора: ' + table.result.dora : ''}` : '';
-  return `<div class="mj-room-head"><div><span class="eyebrow">${modes[room.mode]} · ${room.code}</span><h2>${escape(title)}</h2></div>
-    <button class="button secondary" data-copy>Скопировать приглашение</button></div>
+  return `<div class="mj-room-head"><div><span class="eyebrow">${modes[room.mode]}${room.code ? ' · ' + room.code : ''}</span><h2>${escape(title)}</h2></div>
+    ${room.shared ? '' : '<button class="button secondary" data-copy>Скопировать приглашение</button>'}</div>
     ${!table ? '<p class="mj-instructions">Поделитесь ссылкой. Каждый игрок открывает её на своём устройстве.</p>' : ''}
     ${note ? `<p class="mj-instructions">${escape(note)}</p>` : ''}
     ${table ? `<div class="mj-wall"><span>В стене: ${table.wallCount}</span>
@@ -89,7 +98,8 @@ function roomMarkup(room) {
       <div class="mj-tiles">${table.hand.map((tile,index) => tileMarkup(tile,
         discards.has(tile) ? 'discard-' + tile : null,tile === table.drawn && table.hand.lastIndexOf(tile) === index)).join('')}</div></div>` : ''}
     ${special.length ? `<div class="mj-actions">${special.map(move => `<button class="button ${move.kind === 'pass' ? 'secondary' : 'dark'}" data-move="${move.id}">${actions[move.kind]}${move.tile !== undefined ? ' · ' + face(move.tile).name : ''}${move.tiles ? ' · ' + move.tiles.map(t => face(t).name).join(' + ') : ''}</button>`).join('')}</div>` : ''}
-    ${room.host && room.names.length === 4 && (!table || table.phase === 'end') ? '<button class="button dark" data-start>Начать раздачу</button>' : ''}`;
+    ${!room.shared && table && table.phase !== 'end' ? '<button class="button secondary" data-leave>Покинуть партию</button>' : ''}
+    ${room.host && room.names.length === 4 && (!table || table.phase === 'end' && !table.result.forfeits) ? '<button class="button dark" data-start>Начать раздачу</button>' : ''}`;
 }
 
 export function render(root) {
@@ -107,16 +117,42 @@ export function render(root) {
     <section class="mj-area" id="play"><p class="mj-status" role="status"></p><div data-room></div></section>${rules()}`;
   const area = root.querySelector('.mj-area');
   const panel = area.querySelector('[data-room]');
+  if (inMatch('mahjong')) {
+    const connection = mountMatch(root,'mahjong',match => {
+      const table = match.forfeits.length
+        ? {...match.state,phase:'end',result:{forfeits:match.forfeits.map(side => side - 1)},actions:[],claim:null}
+        : match.state;
+      room = {shared:true,table,seat:match.side - 1,names:match.names,mode:match.option};
+      panel.innerHTML = roomMarkup(room);
+      updateCountdown();
+    });
+    panel.onclick = event => {
+      const id = event.target.closest('[data-move]')?.dataset.move;
+      if (id) connection?.send({action:'play',id,tableVersion:room.table.version});
+    };
+    const timer = setInterval(() => {
+      if (area.isConnected) updateCountdown();
+      else clearInterval(timer);
+    },250);
+    return;
+  }
+  mountLobby(area,'mahjong');
+  if (!online) return;
+  const chatArea = document.createElement('div');
+  area.after(chatArea);
+  const chat = mountChat(chatArea,async text => {
+    await run(async () => show(await request('/' + room.code + '/chat',key,{text})),false,true);
+  });
   const status = area.querySelector('[role="status"]');
   const say = message => { status.textContent = message; };
   const storage = 'table:mahjong:' + apiOrigin + ':';
   function lobby() {
     panel.innerHTML = online ? `<div class="mj-lobby">
-      <form data-operation="create"><h2>Создать стол</h2><label>Ваше имя<input name="name" maxlength="24" autocomplete="nickname" required></label>
+      <form data-operation="create"><h2>Создать стол</h2>
       <label>Вариант<select name="mode"><option value="chinese">Китайский · проще начать</option><option value="riichi">Японский риичи · яку и фуритэн</option></select></label>
       <button class="button dark">Создать стол</button></form>
       <form data-operation="join"><h2>Войти по коду</h2><label>Код стола<input name="code" value="${code}" maxlength="10" pattern="[a-fA-F0-9]{10}" required></label>
-      <label>Ваше имя<input name="name" maxlength="24" autocomplete="nickname" required></label><button class="button dark">Занять место</button></form>
+      <button class="button dark">Занять место</button></form>
     </div>` : '<p class="mj-instructions">Онлайн-стол пока недоступен. Правила обоих вариантов можно прочитать ниже.</p>';
   }
   function show(value) {
@@ -126,6 +162,10 @@ export function render(root) {
       panel.innerHTML = markup;
       rendered = markup;
     }
+    chat(value.messages || []);
+    updateCountdown();
+  }
+  function updateCountdown() {
     const countdown = panel.querySelector('[data-countdown]');
     if (countdown) countdown.textContent = `· ${Math.max(0,Math.ceil((room.table.claim.until - Date.now()) / 1000))} с`;
   }
@@ -137,25 +177,30 @@ export function render(root) {
     history.replaceState(null,'',route + '/' + view.code);
     show(view);
   }
-  function run(task, background = false) {
-    if (busy || !area.isConnected) return pending;
+  function run(task, background = false, reportError = false) {
+    if (busy || !area.isConnected) {
+      if (reportError) return Promise.reject(new Error('Дождитесь ответа стола.'));
+      return pending;
+    }
     if (!background) busy = true;
-    pending = pending.then(async () => {
+    const result = pending.then(async () => {
       if (!area.isConnected) return;
       try {
         await task();
       } catch (error) {
+        if (reportError) throw error;
         say(error.status ? error.message : 'Не удалось связаться со столом. Проверьте подключение.');
       }
     }).finally(() => {
       if (!background) busy = false;
     });
-    return pending;
+    pending = result.catch(() => {});
+    return result;
   }
   area.onsubmit = event => {
     event.preventDefault();
     run(async () => {
-      const data = Object.fromEntries(new FormData(event.target));
+      const data = {...Object.fromEntries(new FormData(event.target)),name:playerName()};
       const join = event.target.dataset.operation === 'join';
       accept(await request(join ? '/' + data.code.trim().toUpperCase() + '/join' : '',null,data));
       say('');
@@ -164,6 +209,12 @@ export function render(root) {
   area.onclick = event => {
     const button = event.target.closest('button');
     if (!room || !button) return;
+    if ('leave' in button.dataset) {
+      if (confirm('Покинуть партию и засчитать поражение?')) {
+        run(async () => show(await request('/' + room.code + '/leave',key,{})));
+      }
+      return;
+    }
     if ('copy' in button.dataset) {
       const link = new URL(route + '/' + room.code,location.href).href;
       navigator.clipboard?.writeText(link).then(() => say('Приглашение скопировано.'),() => say(link));
@@ -182,7 +233,11 @@ export function render(root) {
     }
   };
   lobby();
-  if (!online) return;
+  window.addEventListener('hashchange',() => {
+    if (key && room?.table && room.table.phase !== 'end') {
+      request('/' + room.code + '/leave',key,{}).catch(() => {});
+    }
+  },{once:true});
   try { if (code) key = sessionStorage.getItem(storage + code); } catch {}
   async function poll() {
     if (!area.isConnected) return;
