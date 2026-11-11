@@ -1,11 +1,9 @@
 import {goBoard, goPosition} from './board.js';
+import {readKey, remotePrefix, roomCode, roomPrefix, roomSlot, validKey, writeKey} from './room-code.js';
 
 const colors = {1:'чёрные',2:'белые'};
-const prefix = '#/games/go/room/';
-const valid = value => /^[\w-]{32,}$/.test(value || '');
-
-async function request(path, key, body) {
-  const response = await fetch('/api/go' + path,{
+async function api(origin,path,key,body) {
+  const response = await fetch(origin + '/api/go' + path,{
     method:body === undefined ? 'GET' : 'POST',
     headers:{...(key && {Authorization:'Bearer ' + key}), ...(body !== undefined && {'Content-Type':'application/json'})},
     body:body === undefined ? undefined : JSON.stringify(body),
@@ -21,20 +19,28 @@ async function request(path, key, body) {
 }
 
 export function renderRoom(root) {
-  const [code,hostKey] = location.hash.slice(prefix.length).split('/');
-  let key;
-  const slot = 'table:go:room:' + code;
+  const remote = location.hash.startsWith(remotePrefix);
+  let inviteCode = '';
+  if (remote) {
+    try { inviteCode = decodeURIComponent(location.hash.slice(remotePrefix.length)); } catch {}
+  }
+  const target = remote ? roomCode(inviteCode) : null;
+  const [localCode,hostKey] = location.hash.slice(roomPrefix.length).split('/');
+  const code = remote ? target?.code : localCode;
+  const origin = remote ? target?.origin : location.origin;
+  const request = (path,key,body) => api(origin,path,key,body);
+  const slot = roomSlot(origin,code);
+  const legacySlot = 'table:go:room:' + code;
+  let key = readKey(slot) || (!remote && readKey(legacySlot));
   function remember(value) {
     key = value;
-    try { sessionStorage.setItem(slot,key); } catch {}
+    writeKey(slot,key);
   }
-  if (valid(code) && valid(hostKey)) {
+  if (!remote && validKey(code) && validKey(hostKey)) {
     remember(hostKey);
-    history.replaceState(null,'',prefix + code);
-  } else {
-    try { key = sessionStorage.getItem(slot); } catch {}
+    history.replaceState(null,'',roomPrefix + code);
   }
-  root.innerHTML = `<section class="game-intro"><a class="back" href="#/games/go">← Го на одном устройстве</a>
+  root.innerHTML = `<section class="game-intro"><a class="back" href="#/games/go/online">← Комнаты го</a>
     <div class="eyebrow">ГО / ПРОБНАЯ КОМНАТА</div><h1>Го онлайн<em>У каждого свой экран.</em></h1>
   </section>
   <section class="play-section" id="play">
@@ -42,7 +48,7 @@ export function renderRoom(root) {
     <aside class="game-panel"><h2 data-room-turn>Комната го</h2><p id="status" role="status"></p>
       <div class="game-actions"><button class="button dark" data-join hidden>Играть за белых</button>
       <button class="button dark" data-pass hidden>Пас</button></div>
-      <label data-invite hidden>Ссылка для белых<input class="go-room-invite" readonly></label>
+      <label data-invite hidden>${remote ? 'Код комнаты для белых' : 'Ссылка для белых'}<input class="go-room-invite" readonly></label>
       <p data-captures class="save-note"></p>
     </aside>
   </section>`;
@@ -54,11 +60,11 @@ export function renderRoom(root) {
   const pass = area.querySelector('[data-pass]');
   const invite = area.querySelector('[data-invite]');
   const link = invite.querySelector('input');
-  if (!valid(code)) {
-    status.textContent = 'Откройте полную ссылку приглашения.';
+  if (!validKey(code)) {
+    status.textContent = 'Проверьте код комнаты или ссылку приглашения.';
     return;
   }
-  link.value = new URL(prefix + code,location.href).href;
+  link.value = remote ? inviteCode : new URL(roomPrefix + code,location.href).href;
   link.onclick = () => link.select();
   let state;
   let busy = false;
@@ -79,7 +85,7 @@ export function renderRoom(root) {
     status.textContent = disconnected ? 'Нет связи с сервером. Пробуем подключиться снова.'
       : state.ended ? `Победили ${colors[state.points[1] > state.points[2] ? 1 : 2]}. Счёт: ${state.points[1]} : ${state.points[2]}.`
       : state.passes ? 'Ещё один пас завершит партию.'
-      : !state.ready ? 'Отправьте приглашение второму игроку.' : '';
+      : !state.ready ? (remote ? 'Отправьте код комнаты второму игроку.' : 'Отправьте приглашение второму игроку.') : '';
   }
 
   function show(next) {
@@ -127,8 +133,8 @@ export function renderRoom(root) {
       catch (error) {
         if (busy || !area.isConnected) return schedule();
         if (error.status === 401) {
-          key = null;
-          try { sessionStorage.removeItem(slot); } catch {}
+          remember(null);
+          if (!remote) writeKey(legacySlot,null);
           join.hidden = false;
           status.textContent = error.message;
         } else if (state) {

@@ -466,6 +466,28 @@
 .coordinate-go .board { padding: var(--go-padding); border-width: var(--go-border); }
 .go-last-position { color: #344b38; font-weight: 700; font-size: 11px; }
 .go-room-invite { display: block; width: 100%; margin-top: 7px; padding: 8px; font-size: 12px; }
+.go-online-lobby {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,280px),1fr));
+  align-items: start;
+  gap: 18px;
+  padding-bottom: 48px;
+}
+.go-online-card { padding: 20px; border: 1px solid var(--line); border-radius: 6px; }
+.go-online-card h2 { margin: 0 0 14px; font-size: 24px; }
+.go-online-card label, .go-online-card p { font-size: 13px; line-height: 1.6; }
+.go-online-card textarea {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: #fffdf4;
+  font: 12px/1.5 monospace;
+  resize: vertical;
+}
+.go-online-card .button { margin-top: 10px; }
+.go-online-card p:not(:empty) { margin-top: 12px; }
 .save-note.save-warning { color: #8b3a26; font-size: 12px; font-weight: 600; }
 .go-backup { display: flex; flex-wrap: wrap; gap: 0 14px; margin: -12px 0 12px; }
 .go-backup .text-button { padding: 5px 0; color: var(--green); text-decoration: underline; }

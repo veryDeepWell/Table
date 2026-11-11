@@ -1,6 +1,8 @@
 """Start one invite-only Go room using the project's Node.js server."""
 
 import argparse
+import getpass
+import hmac
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,7 @@ import subprocess
 import sys
 from threading import Thread
 import time
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 import webbrowser
 
@@ -64,12 +67,27 @@ def stop(process):
         process.kill()
         process.wait()
 
+def read_setup():
+    value = (getpass.getpass("Вставьте код запуска с сайта: ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
+    match = re.fullmatch(r"go-setup-v1\.(9|13|19)\.([0-9a-f]{64})\.(.+)", value)
+    if not match:
+        raise ValueError("Некорректный код запуска. Скопируйте его целиком с сайта.")
+    size, secret, origin = match.groups()
+    parsed = urlsplit(origin)
+    if (origin != f"{parsed.scheme}://{parsed.netloc}" or not parsed.hostname
+            or parsed.username is not None or parsed.port == 0
+            or (parsed.scheme != "https"
+                and not (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")))):
+        raise ValueError("Код запуска должен содержать HTTPS-адрес сайта.")
+    return size, secret, origin
+
 
 def main():
     parser = argparse.ArgumentParser(description="Создать комнату го на двоих.")
     parser.add_argument("--size", type=int, choices=[9, 13, 19], default=9)
     parser.add_argument("--local", action="store_true", help="Проверка на одном компьютере, без туннеля.")
     parser.add_argument("--no-browser", action="store_true", help="Показать приватную ссылку ведущего в терминале.")
+    parser.add_argument("--setup", action="store_true", help="Принять код запуска и выдать код комнаты для сайта.")
     args = parser.parse_args()
     node = shutil.which("node")
     if not node:
@@ -80,12 +98,11 @@ def main():
                      "Скачайте его с https://developers.cloudflare.com/tunnel/downloads/. "
                      "Для проверки на этом компьютере запустите с --local.")
 
-    host_key = secrets.token_urlsafe(32)
-    env = {**os.environ, "HOST":"127.0.0.1", "PORT":"0",
-           "TABLE_GO_HOST_KEY":host_key, "TABLE_GO_SIZE":str(args.size)}
-    env.pop("TABLE_ORIGIN", None)
     processes = []
     try:
+        size, host_key, site = read_setup() if args.setup else (str(args.size), secrets.token_urlsafe(32), "")
+        env = {**os.environ, "HOST":"127.0.0.1", "PORT":"0",
+               "TABLE_GO_HOST_KEY":host_key, "TABLE_GO_SIZE":size, "TABLE_ORIGIN":site}
         local = wait_for_url(start([node, "scripts/serve.mjs"], processes, env=env), LOCAL_URL, 10)
         request = Request(local + "/api/go/host", headers={"Authorization":"Bearer " + host_key})
         with urlopen(request, timeout=5) as response:
@@ -96,18 +113,23 @@ def main():
             origin = wait_for_url(
                 start([tunnel, "tunnel", "--url", local], processes), QUICK_URL, 40,
             )
-        invite = origin + "/#/games/go/room/" + code
-        host = invite + "/" + host_key
-        print("Приглашение для второго игрока:", invite, flush=True)
-        if args.no_browser or not webbrowser.open(host):
-            print("Приватная ссылка ведущего (не пересылайте):", host, flush=True)
+        if args.setup:
+            proof = hmac.digest(host_key.encode(), (origin + "/" + code).encode(), "sha256").hex()
+            print("Код комнаты для вас и друга:", flush=True)
+            print(f"go-room-v1.{code}.{proof}.{origin}", flush=True)
+        else:
+            invite = origin + "/#/games/go/room/" + code
+            host = invite + "/" + host_key
+            print("Приглашение для второго игрока:", invite, flush=True)
+            if args.no_browser or not webbrowser.open(host):
+                print("Приватная ссылка ведущего (не пересылайте):", host, flush=True)
         print("Ctrl+C завершает работу комнаты.", flush=True)
         while all(process.poll() is None for process in processes):
             time.sleep(.5)
         raise RuntimeError("Сервер или туннель остановился.")
     except KeyboardInterrupt:
         return 0
-    except (OSError, RuntimeError, ValueError) as error:
+    except (EOFError, OSError, RuntimeError, ValueError) as error:
         print("Не удалось запустить комнату:", error, file=sys.stderr)
         return 1
     finally:
