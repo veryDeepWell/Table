@@ -29,7 +29,7 @@ const server = http.createServer(async (req,res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url,'http://localhost').pathname);
     if (pathname.startsWith('/api/')) return await api(req,res,pathname.slice(4));
-    if (pathname === '/room-launcher.py' && !goSecret) {
+    if (['/room-launcher.txt','/room-launcher.py'].includes(pathname) && !goSecret) {
       const source = await launcherSource();
       res.setHeader('Content-Type','text/plain; charset=utf-8');
       return res.end(source);

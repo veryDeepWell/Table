@@ -30,10 +30,13 @@ export function mountLobby(playSection,game) {
   create.onclick = async () => {
     create.disabled = true;
     try {
-      const response = await fetch(new URL('../../room-launcher.py',import.meta.url));
-      if (!response.ok) throw new Error();
+      let response = await fetch(new URL('../../room-launcher.txt',import.meta.url));
+      if (response.status === 404 && ['localhost','127.0.0.1'].includes(location.hostname)) {
+        response = await fetch(new URL('../../room-launcher.py',import.meta.url));
+      }
+      if (!response.ok) throw new Error(`Шаблон файла запуска недоступен (HTTP ${response.status}).`);
       const source = await response.text();
-      if (!source.startsWith('BUNDLE = ')) throw new Error();
+      if (!source.startsWith('BUNDLE = ')) throw new Error('Сайт вернул неверный шаблон файла запуска.');
       const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)),byte => byte.toString(16).padStart(2,'0')).join('');
       const settings = (option?.value || 'standard') + '.' + secret;
       const local = ['127.0.0.1','localhost'].includes(location.hostname);
@@ -49,8 +52,10 @@ export function mountLobby(playSection,game) {
       setTimeout(() => URL.revokeObjectURL(url),1000);
       writeKey(draftKey,settings);
       launchStatus.textContent = 'Запусти скачанный файл. Когда откроется комната, скопируй приглашение.';
-    } catch {
-      launchStatus.textContent = 'Не удалось скачать файл запуска. Обнови страницу и попробуй ещё раз.';
+    } catch (error) {
+      launchStatus.textContent = error instanceof TypeError
+        ? 'Не удалось подключиться к сайту для скачивания файла запуска.'
+        : error.message;
     } finally { create.disabled = false; }
   };
   details.querySelector('form').onsubmit = async event => {

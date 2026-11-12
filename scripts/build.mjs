@@ -9,4 +9,4 @@ if (configured) {
   apiOrigin = url.origin;
 }
 await writeFile('dist/src/games/mahjong/config.js',`export const apiOrigin = ${JSON.stringify(apiOrigin)};\n`);
-await writeFile('dist/room-launcher.py',await launcherSource());
+await writeFile('dist/room-launcher.txt',await launcherSource());
