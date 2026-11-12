@@ -17,6 +17,15 @@ function decodePosition(position, size) {
     ![0,1,2].includes(position.passes) || typeof position.ended !== 'boolean' ||
     !(position.last === null || Number.isInteger(position.last) && position.last >= 0 && position.last < board.length)) return null;
   const {history,...data} = position;
+  if (data.dead !== undefined && (!Array.isArray(data.dead) ||
+    data.dead.some(point => !Number.isInteger(point) || !board[point]))) return null;
+  if (data.accepted !== undefined && (!Array.isArray(data.accepted) ||
+    data.accepted.some(side => ![1,2].includes(side)))) return null;
+  if (data.confirmed !== undefined && typeof data.confirmed !== 'boolean') return null;
+  const modes = ['automatic','manual'];
+  if (data.mode != null && !modes.includes(data.mode)) return null;
+  if (data.votes !== undefined && (!Array.isArray(data.votes) || data.votes.length > 2 ||
+    data.votes.some(vote => vote !== null && !modes.includes(vote)))) return null;
   return {...data,board};
 }
 

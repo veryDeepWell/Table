@@ -2,7 +2,21 @@ import {askName,playerName} from './online/profile.js';
 import {games} from './data/games.js';
 const app=document.querySelector('#app');
 const mark='<span class="brand-mark">●<i>○</i></span>';
-function shell(content){app.innerHTML=`<header><a class="brand" href="#/">${mark}за столом<span class="brand-dot">.</span></a><nav aria-label="Главная навигация"><a href="#/" ${!location.hash||location.hash==='#/'?'aria-current="page"':''}>Все игры <span>${String(games.length).padStart(2,"0")}</span></a><a href="#/about">О проекте <span>↗</span></a></nav><button type="button" class="header-profile text-button" data-edit-name>Имя игрока</button></header><main>${content}</main><footer><a class="brand" href="#/">${mark}за столом.</a><span>Меньше суеты. Больше хороших партий.</span><span>Сделано для тех, кто любит играть ↗</span></footer>`; const profile = app.querySelector("[data-edit-name]"); profile.textContent = playerName() || "Имя игрока"; profile.onclick = askName;}
+function openServerGuide() {
+  const guide = document.createElement('dialog');
+  guide.className = 'profile-dialog server-instructions';
+  guide.setAttribute('aria-labelledby','server-guide-title');
+  guide.innerHTML = `<form method="dialog"><h2 id="server-guide-title">Как играть по сети</h2>
+    <p>Ведущему нужны Python, Node.js 22+ и cloudflared. Гости подключаются через браузер.</p>
+    <ol><li>Открой игру, выбери «Играть по сети» и скачай файл запуска.</li>
+    <li>Запусти файл .py и оставь окно сервера открытым.</li>
+    <li>В открывшейся комнате нажми «Скопировать приглашение» и отправь ссылку друзьям.</li></ol>
+    <button class="button dark">Закрыть</button></form>`;
+  guide.onclose = () => guide.remove();
+  document.body.append(guide);
+  guide.showModal();
+}
+function shell(content){app.innerHTML=`<header><a class="brand" href="#/">${mark}за столом<span class="brand-dot">.</span></a><nav aria-label="Главная навигация"><a href="#/" ${!location.hash||location.hash==='#/'?'aria-current="page"':''}>Все игры <span>${String(games.length).padStart(2,"0")}</span></a><a href="#/about">О проекте <span>↗</span></a><button type="button" class="text-button server-guide" data-server-guide>Как играть по сети</button></nav><button type="button" class="header-profile text-button" data-edit-name>Имя игрока</button></header><main>${content}</main><footer><a class="brand" href="#/">${mark}за столом.</a><span>Меньше суеты. Больше хороших партий.</span><span>Сделано для тех, кто любит играть ↗</span></footer>`; const profile = app.querySelector("[data-edit-name]"); profile.textContent = playerName() || "Имя игрока"; profile.onclick = askName; app.querySelector("[data-server-guide]").onclick = openServerGuide;}
 function home() {
   const cards = games.map((game,index) => `<a class="game-card" href="#/games/${game.id}" data-search="${[game.name,game.aliases,game.variant,game.category].join(' ').toLowerCase()}">
     <div class="card-art cover-${game.id}" aria-hidden="true">

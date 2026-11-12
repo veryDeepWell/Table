@@ -12,7 +12,42 @@ const request = (match,path,key,body) => match({
 const invitation = match => request(match,'/host',host).body.code;
 const join = (match,name) => request(match,'/' + invitation(match) + '/join',null,{name}).body;
 
-for (const game of networkGames.filter(id => id !== 'mahjong')) {
+test('battleship keeps placement private and passes the turn only on a miss', () => {
+  const match = createMatch('battleship',host,'standard');
+  const guest = join(match,'Гость');
+  const play = (key,version,kind,point) =>
+    request(match,'/move',key,{action:'play',kind,version,point});
+  assert.equal(play(host,0,'place',9).status,400);
+  assert.equal(play(host,0,'random').status,200);
+  const placed = play(guest.key,1,'random').body;
+  const fleet = placed.state.ships.flat();
+  assert.equal(fleet.length,20);
+  assert.equal(request(match,'/history',host).body.positions.length,2);
+  assert.equal(play(host,2,'ready').status,200);
+  assert.equal(play(guest.key,3,'ready').status,200);
+  assert.equal(play(guest.key,4,'shoot',0).status,400);
+  assert.equal(play(host,4,'shoot',fleet[0]).body.state.turn,1);
+  const miss = Array.from({length:100},(_,index) => index).find(index => !fleet.includes(index));
+  assert.equal(play(host,5,'shoot',miss).body.state.turn,2);
+  assert.ok(request(match,'/history',host).body.positions.every(entry => !('fleets' in entry.position)));
+});
+
+test('four domino seats each get seven distinct tiles and only the opening seat can play', () => {
+  const match = createMatch('domino',host,'standard');
+  const keys = [host,...['Два','Три','Четыре'].map(name => join(match,name).key)];
+  const states = keys.map(key => request(match,'',key).body.state);
+  assert.ok(states.every(state => state.hand.length === 7 && !('hands' in state)));
+  assert.equal(new Set(states.flatMap(state => state.hand.map(tile => tile.join('-')))).size,28);
+  const opener = states[0].turn - 1;
+  const move = states[opener].actions[0];
+  const body = {action:'play',kind:'tile',version:0,...move};
+  assert.equal(request(match,'/move',keys[(opener+1)%4],body).status,400);
+  assert.deepEqual(request(match,'/move',keys[opener],body).body.state.chain,[[1,1]]);
+  const archive = request(match,'/history',keys[(opener+1)%4]).body;
+  assert.ok(archive.positions.every(entry => !('hands' in entry.position) && entry.position.hand.length === 7));
+});
+
+for (const game of networkGames.filter(id => !['mahjong','battleship','domino'].includes(id))) {
   test(`${game}: shared room validates turns and synchronizes a move`,() => {
     const match = createMatch(game,host,game === 'go' ? 9 : 'standard');
     const move = {action:game === 'backgammon' ? 'roll' : 'play',index:0,point:0,version:0};
@@ -26,6 +61,10 @@ for (const game of networkGames.filter(id => id !== 'mahjong')) {
     assert.notDeepEqual(played.body.state,guest.state);
     assert.deepEqual(request(match,'',guest.key).body.state,played.body.state);
     assert.equal(request(match,'/move',host,move).status,409);
+    const archive = request(match,'/history',guest.key).body;
+    assert.equal(archive.events.length,1);
+    assert.equal(archive.events[0].event,move.action);
+    assert.equal(request(match,'/history',null).status,401);
   });
 }
 
@@ -67,6 +106,10 @@ for (const mode of ['chinese','riichi']) {
     const move = {action:'play',id:discard.id,tableVersion:dealer.state.version,version:dealer.version};
     assert.equal(request(match,'/move',east.key,move).status,400);
     assert.equal(request(match,'/move',host,move).status,200);
+    const archive = request(match,'/history',west.key).body;
+    assert.equal(archive.positions[0].position.hand.length,13);
+    assert.ok(archive.positions.every(entry => entry.position.players.every(player => !('hand' in player))));
+    assert.equal(archive.positions[1].action,undefined);
     assert.equal(request(match,'',west.key).body.state.players[0].river[0].tile,discard.tile);
     assert.deepEqual(request(match,'/leave',north.key,{}).body.forfeits,[4]);
     assert.equal(request(match,'/move',host,move).status,409);
@@ -81,4 +124,28 @@ test('invitation signature binds the code, game and server',async () => {
   assert.equal(parseInvite(invite,'dots'),null);
   assert.equal(await verifyInvite(parseInvite(invite,'chess'),host),true);
   assert.equal(await verifyInvite(parseInvite(invite.replace('5500','5501'),'chess'),host),false);
+});
+
+test('Go scoring removes a marked group virtually and requires fresh confirmation',() => {
+  const match = createMatch('go',host,9);
+  const guest = join(match,'Гость');
+  const move = (key,version,action,point) => request(match,'/move',key,{version,action,point}).body;
+  move(host,0,'play',0);
+  move(guest.key,1,'play',80);
+  move(host,2,'pass');
+  move(guest.key,3,'pass');
+  assert.equal(move(host,4,'automatic').state.mode,undefined);
+  assert.equal(move(guest.key,5,'manual').state.mode,undefined);
+  assert.equal(move(host,6,'manual').state.mode,'manual');
+  move(host,7,'confirm');
+  const changed = move(guest.key,8,'mark',80);
+  assert.deepEqual(changed.state.accepted,[]);
+  assert.deepEqual(changed.state.dead,[80]);
+  assert.equal(changed.state.board[80],2);
+  assert.equal(move(guest.key,9,'confirm').ended,false);
+  const finished = move(host,10,'confirm');
+  assert.equal(finished.ended,true);
+  assert.deepEqual(finished.state.points,[0,81,7.5]);
+  assert.deepEqual(request(match,'/history',host).body.events.map(entry => entry.event),
+    ['play','play','pass','pass','automatic','manual','manual','confirm','mark','confirm','confirm']);
 });

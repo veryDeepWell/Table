@@ -1,5 +1,7 @@
 import {randomBytes} from 'node:crypto';
-import {createGame, pass, play, score} from '../src/games/go/engine.js';
+import {createGame} from '../src/games/go/engine.js';
+import {encodeGo} from '../src/games/go/save.js';
+import {matchGames} from './match-games.mjs';
 import {expiredSeats} from './presence.mjs';
 import {addMessage,playerName} from './chat.mjs';
 
@@ -15,17 +17,18 @@ export function createGoRoom(hostSecret, size, clock = Date.now) {
   let forfeits = [];
   const names = ['Чёрные','Белые'];
   const messages = [];
+  const events = [];
+  const adapter = matchGames.go;
+  const ended = () => Boolean(forfeits.length) || adapter.ended(game);
   function forfeit(seats) {
-    if (!seats.length || game.ended) return;
+    if (!seats.length || ended()) return;
     forfeits = seats.map(seat => seat + 1);
-    game = {...game,ended:true};
+    events.push({event:'forfeit',sides:forfeits,time:clock()});
     version++;
   }
   const view = side => ({
-    side, ready:Boolean(guestKey), version, size, turn:game.turn,
-    board:game.board, last:game.last, captures:game.captures,
-    passes:game.passes, ended:game.ended, forfeits, names, messages,
-    points:game.ended && !forfeits.length ? score(game) : null,
+    ...adapter.view(game,side), scoring:game.ended && !ended(),
+    side, ready:Boolean(guestKey), version, ended:ended(), forfeits, names, messages,
   });
   return function request({method,path,token:key,body}) {
     const now = clock();
@@ -47,6 +50,9 @@ export function createGoRoom(hostSecret, size, clock = Date.now) {
       lastSeen[side - 1] = now;
     }
     if (path === '/go' && method === 'GET') return reply(200,view(side));
+    if (path === '/go/history' && method === 'GET') {
+      return reply(200,{...encodeGo(game),game:'go',side,names,events,forfeits});
+    }
     if (path === '/go/name' && method === 'POST') {
       const name = playerName(body?.name);
       if (!name) return fail(400,'Введите имя до 24 символов.');
@@ -63,12 +69,12 @@ export function createGoRoom(hostSecret, size, clock = Date.now) {
     }
     if (path !== '/go/move' || method !== 'POST') return fail(404,'Действие не найдено.');
     if (!guestKey) return fail(409,'Дождитесь второго игрока.');
-    if (game.ended || side !== game.turn || body?.version !== version) {
+    if (ended() || !game.ended && side !== game.turn || body?.version !== version) {
       return fail(409,'Ход уже недоступен. Доска обновится.');
     }
-    if (body.action !== 'pass' && body.action !== 'play') return fail(400,'Неизвестный ход.');
-    const next = body.action === 'pass' ? pass(game) : play(game,body.point);
-    if (next.error) return fail(400,next.error);
+    const next = adapter.move(game,side,body);
+    if (!next || next.error) return fail(400,next?.error || 'Этот ход недоступен.');
+    events.push({event:body.action,side,time:now,...adapter.record(game,body,next)});
     game = next;
     version++;
     return reply(200,view(side));

@@ -1,6 +1,8 @@
-"""Start one invite-only Go room using the project's Node.js server."""
+"""Start an invite-only room using the project's Node.js server."""
 
 import argparse
+import base64
+import gzip
 import hmac
 import json
 import os
@@ -13,7 +15,8 @@ import subprocess
 import sys
 from threading import Thread
 import time
-from urllib.parse import urlsplit
+from tempfile import TemporaryDirectory
+from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 import webbrowser
 
@@ -68,8 +71,7 @@ def stop(process):
         process.kill()
         process.wait()
 
-def read_setup():
-    value = input("Вставьте код запуска с сайта и нажмите Enter: ").strip()
+def read_setup(value):
     match = re.fullmatch(r"table-setup-v1\.([a-z-]+)\.(9|13|19|chinese|riichi|standard)\.([0-9a-f]{64})\.(.+)", value)
     if not match:
         legacy = re.fullmatch(r"go-setup-v1\.(9|13|19)\.([0-9a-f]{64})\.(.+)", value)
@@ -88,6 +90,39 @@ def read_setup():
     return game, option, secret, origin
 
 
+def wait_in_window(processes):
+    try:
+        import tkinter as tk
+    except ImportError:
+        return False
+    try:
+        window = tk.Tk()
+    except tk.TclError:
+        return False
+    window.title("За столом · Сервер комнаты")
+    icon = tk.PhotoImage(width=32, height=32)
+    icon.put("#344b38", to=(0, 0, 32, 32))
+    for rectangle in [(5, 9, 27, 14), (8, 14, 12, 24), (20, 14, 24, 24)]:
+        icon.put("#f6f5ef", to=rectangle)
+    window.iconphoto(True, icon)
+    status = tk.Label(window, text="Сервер комнаты запущен")
+    status.pack(padx=28, pady=(20, 6))
+    tk.Label(window, text="Скопируйте приглашение на сайте.").pack(padx=28)
+    stop_button = tk.Button(window, text="Остановить сервер", command=window.destroy)
+    stop_button.pack(pady=18)
+
+    def check_processes():
+        if any(process.poll() is not None for process in processes):
+            status.config(text="Сервер или туннель остановился")
+            stop_button.config(text="Закрыть")
+        else:
+            window.after(750, check_processes)
+
+    window.after(750, check_processes)
+    window.mainloop()
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="Запустить сетевую комнату сайта «За столом».")
     parser.add_argument("--size", type=int, choices=[9, 13, 19], default=9)
@@ -99,7 +134,9 @@ def main():
     if not node:
         parser.error("Нужен Node.js. Установите его с https://nodejs.org/.")
     tunnel = shutil.which("cloudflared")
-    if not args.local and not tunnel:
+    launch = globals().get("LAUNCH")
+    local_only = args.local or bool(launch and launch.get("local"))
+    if not local_only and not tunnel:
         parser.error("Для игры через интернет нужен cloudflared в PATH. "
                      "Скачайте его с https://developers.cloudflare.com/tunnel/downloads/. "
                      "Для проверки на этом компьютере запустите с --local.")
@@ -107,7 +144,8 @@ def main():
     processes = []
     local = None
     try:
-        game, option, host_key, site = read_setup() if args.setup else ("", str(args.size), secrets.token_urlsafe(32), "")
+        setup = launch["setup"] if launch else input("Вставьте код запуска с сайта и нажмите Enter: ").strip() if args.setup else None
+        game, option, host_key, site = read_setup(setup) if setup is not None else ("", str(args.size), secrets.token_urlsafe(32), "")
         api = "/api/match" if game else "/api/go"
         env = {**os.environ, "HOST":"127.0.0.1", "PORT":"0",
                "TABLE_GO_HOST_KEY":host_key, "TABLE_GO_SIZE":option if game in ("","go") else "9",
@@ -117,17 +155,25 @@ def main():
         with urlopen(request, timeout=5) as response:
             code = json.load(response)["code"]
         origin = local
-        if not args.local:
+        if not local_only:
             print("Открываю временный HTTPS-туннель…", flush=True)
             origin = wait_for_url(
                 start([tunnel, "tunnel", "--url", local], processes), QUICK_URL, 40,
             )
-        if args.setup:
+        if setup is not None:
             signed = (game + "/" if game else "") + origin + "/" + code
             proof = hmac.digest(host_key.encode(), signed.encode(), "sha256").hex()
             prefix = f"table-room-v1.{game}" if game else "go-room-v1"
-            print("Код комнаты для вас и друга:", flush=True)
-            print(f"{prefix}.{code}.{proof}.{origin}", flush=True)
+            room = f"{prefix}.{code}.{proof}.{origin}"
+            if launch:
+                address = urlsplit(launch["page"])
+                if f"{address.scheme}://{address.netloc}" != site:
+                    raise ValueError("Адрес страницы не совпадает с адресом сайта.")
+                host_url = f"{launch['page']}#/games/{game}/room/match/{quote(room,safe='')}/{host_key}"
+                if args.no_browser or not webbrowser.open(host_url):
+                    print("Откройте ссылку ведущего:", host_url, flush=True)
+            else:
+                print("Код комнаты для вас и друга:", room, flush=True)
         else:
             invite = origin + "/#/games/go/room/" + code
             host = invite + "/" + host_key
@@ -135,6 +181,8 @@ def main():
             if args.no_browser or not webbrowser.open(host):
                 print("Приватная ссылка ведущего (не пересылайте):", host, flush=True)
         print("Ctrl+C завершает работу комнаты.", flush=True)
+        if launch and not args.no_browser and wait_in_window(processes):
+            raise KeyboardInterrupt
         while all(process.poll() is None for process in processes):
             time.sleep(.5)
         raise RuntimeError("Сервер или туннель остановился.")
@@ -159,4 +207,13 @@ def main():
 
 
 if __name__ == "__main__":
+    if "BUNDLE" in globals():
+        with TemporaryDirectory(prefix="za-stolom-") as folder:
+            ROOT = Path(folder)
+            files = json.loads(gzip.decompress(base64.b64decode(BUNDLE)))
+            for name, contents in files.items():
+                path = ROOT / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(base64.b64decode(contents))
+            sys.exit(main())
     sys.exit(main())

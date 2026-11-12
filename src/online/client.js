@@ -1,6 +1,8 @@
-import {matchSlot,parseInvite,readKey,roomRoute,writeKey} from './codes.js';
+import {matchSlot,parseInvite,readKey,roomRoute,verifyInvite,writeKey} from './codes.js';
 import {askName,playerName} from './profile.js';
 import {mountChat} from './chat.js';
+import {downloadHistory} from '../games/history-export.js';
+import {watchOpponentMove} from './move-sound.js';
 
 const prefix = game => roomRoute(game) + 'match/';
 export const inMatch = game => location.hash.startsWith(prefix(game));
@@ -17,7 +19,7 @@ export async function roomRequest(origin,path,key,body) {
   return data;
 }
 
-export function mountMatch(root,game,paint) {
+export function mountMatch(root,game,paint,showHistory) {
   const play = root.querySelector('#play');
   const panel = document.createElement('section');
   panel.className = 'match-controls';
@@ -25,14 +27,18 @@ export function mountMatch(root,game,paint) {
     <button class="button dark" data-match-join hidden>Присоединиться</button>
     <button class="button secondary" data-match-copy hidden>Скопировать приглашение</button>
     <button class="button secondary" data-match-leave hidden>Покинуть партию</button>
+    <button class="button secondary" data-match-export hidden>Скачать историю партии</button>
     <input aria-label="Ссылка приглашения" readonly hidden><p role="status"></p>`;
   play.before(panel);
   const status = panel.querySelector('[role="status"]');
   const join = panel.querySelector('[data-match-join]');
   const copy = panel.querySelector('[data-match-copy]');
   const leave = panel.querySelector('[data-match-leave]');
+  const exportButton = panel.querySelector('[data-match-export]');
   let code;
-  try { code = decodeURIComponent(location.hash.slice(prefix(game).length)); } catch {}
+  const [encoded,hostSecret] = location.hash.slice(prefix(game).length).split('/');
+  try { code = decodeURIComponent(encoded); } catch {}
+  if (hostSecret) history.replaceState(null,'',prefix(game) + encoded);
   const room = parseInvite(code || '',game);
   if (!room) { status.textContent = 'Проверьте ссылку приглашения.'; return; }
   const slot = matchSlot(room);
@@ -40,6 +46,9 @@ export function mountMatch(root,game,paint) {
   let current;
   let online = true;
   let previous = '';
+  let archived = '';
+  let loadingHistory = false;
+  const sound = watchOpponentMove();
   let task = Promise.resolve();
   const queue = action => {
     const result = task.then(action);
@@ -67,11 +76,21 @@ export function mountMatch(root,game,paint) {
     copy.hidden = next.side !== 1 || next.ready;
     if (copy.hidden) input.hidden = true;
     leave.hidden = !next.ready || next.ended;
+    exportButton.hidden = !next.ready;
     chat(next.messages);
     const signature = JSON.stringify([next.state,next.side,next.ready,next.ended,next.forfeits,next.names]);
     if (signature !== previous) {
       previous = signature;
       paint(next);
+    }
+    if (next.ready && archived !== signature && !loadingHistory) {
+      loadingHistory = true;
+      api('/history').then(archive => {
+        if (!panel.isConnected) return;
+        archived = signature;
+        sound(archive,next.side);
+        showHistory?.(archive);
+      }).catch(() => {}).finally(() => { loadingHistory = false; });
     }
   }
   const send = action => {
@@ -103,6 +122,10 @@ export function mountMatch(root,game,paint) {
     if (!confirm('Покинуть партию и засчитать поражение?')) return;
     queue(async () => show(await api('/leave',{}))).catch(error => { status.textContent = error.message; });
   };
+  exportButton.onclick = async () => {
+    try { downloadHistory(game,await api('/history')); }
+    catch (error) { status.textContent = error.message; }
+  };
   window.addEventListener('hashchange',() => {
     document.removeEventListener('table:profile',profile);
     if (key && current?.ready && !current.ended) api('/leave',{}).catch(() => {});
@@ -130,7 +153,17 @@ export function mountMatch(root,game,paint) {
     });
     if (panel.isConnected) setTimeout(poll,700);
   }
-  poll();
+  async function connect() {
+    if (hostSecret && /^[a-f0-9]{64}$/.test(hostSecret) &&
+        await verifyInvite(room,hostSecret).catch(() => false) && panel.isConnected) {
+      key = hostSecret;
+      writeKey(slot,key);
+      join.hidden = true;
+      status.textContent = 'Подключаемся…';
+    }
+    poll();
+  }
+  connect();
   return {send};
 }
 

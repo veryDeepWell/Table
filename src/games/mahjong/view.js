@@ -3,6 +3,9 @@ import {inMatch,mountMatch} from '../../online/client.js';
 import {mountLobby} from '../../online/lobby.js';
 import {mountChat} from '../../online/chat.js';
 import {playerName} from '../../online/profile.js';
+import {downloadHistory} from '../history-export.js';
+import {mountReplay} from '../replay.js';
+import {watchOpponentMove} from '../../online/move-sound.js';
 
 const route = '#/games/mahjong';
 const online = apiOrigin !== null;
@@ -33,7 +36,7 @@ function tileMarkup(tile, action, drawn = false) {
 
 function rules() {
   return `<section id="rules" class="rules-section">
-    <div class="section-heading"><div><span class="eyebrow">ЧЕТЫРЕ ИГРОКА · СКРЫТЫЕ РУКИ</span><h2>Правила и примеры</h2></div></div>
+    <h2>Правила</h2>
     <div class="rules-list">
       <article class="rule classic-rule"><span class="rule-number">01</span><div><h3>Набор и ход</h3><p>В наборе 136 костей: символы, бамбуки и круги от 1 до 9, четыре ветра и три дракона. Каждая кость встречается четыре раза. У каждого по 13 костей, Восток начинает с 14. На ходу вы добираете кость и сбрасываете одну. Ваша рука видна только вам.</p></div></article>
       <article class="rule classic-rule"><span class="rule-number">02</span><div><h3>Четыре набора и пара</h3><p>Соберите четыре набора и пару. Набор — три подряд в одной масти (чи), три одинаковых (пон) или четыре одинаковых (кан). Ветры и драконы не образуют последовательностей. Особые выигрышные руки — семь разных пар или тринадцать сирот: все единицы, девятки и знаки, плюс дубль любой из них.</p><div class="rule-example"><b>Чи из символов</b><div class="mj-tiles">${[0,1,2].map(tile => tileMarkup(tile)).join('')}</div></div></div></article>
@@ -86,7 +89,8 @@ function roomMarkup(room) {
   const note = table?.result?.kind ? `${actions[table.result.kind]}${table.result.yaku.length ? ' · ' + table.result.yaku.join(', ') : ''}
     ${room.mode === 'riichi' ? ' · Дора: ' + table.result.dora : ''}` : '';
   return `<div class="mj-room-head"><div><span class="eyebrow">${modes[room.mode]}${room.code ? ' · ' + room.code : ''}</span><h2>${escape(title)}</h2></div>
-    ${room.shared ? '' : '<button class="button secondary" data-copy>Скопировать приглашение</button>'}</div>
+    ${room.shared ? '' : '<button class="button secondary" data-copy>Скопировать приглашение</button>'}
+    ${!room.shared && table ? '<button class="button secondary" data-export>Скачать историю партии</button>' : ''}</div>
     ${!table ? '<p class="mj-instructions">Поделитесь ссылкой. Каждый игрок открывает её на своём устройстве.</p>' : ''}
     ${note ? `<p class="mj-instructions">${escape(note)}</p>` : ''}
     ${table ? `<div class="mj-wall"><span>В стене: ${table.wallCount}</span>
@@ -110,13 +114,15 @@ export function render(root) {
   let busy = false;
   let pending = Promise.resolve();
   let rendered = '';
-  root.innerHTML = `<section class="game-intro"><a href="#/" class="back">← Все игры</a>
-    <div class="eyebrow">МАДЖОНГ · ОНЛАЙН</div><h1>Маджонг<em>У каждого своя рука.</em></h1>
-    <p>Четыре игрока за одним столом. Каждый со своего устройства.</p>
-    <div class="intro-meta"><a href="#rules">Правила и примеры ↓</a></div></section>
-    <section class="mj-area" id="play"><p class="mj-status" role="status"></p><div data-room></div></section>${rules()}`;
+  root.innerHTML = `<section class="mj-area" id="play"><h1>Маджонг</h1><p class="mj-status" role="status"></p><div data-room></div></section>${rules()}`;
   const area = root.querySelector('.mj-area');
   const panel = area.querySelector('[data-room]');
+  const replay = mountReplay(area,panel,table => roomMarkup({
+    ...room,shared:true,host:false,table:{...table,actions:[],claim:null},
+  }));
+  const showReplay = archive => replay(archive.positions.map(({position,event},index) => ({
+    state:position,label:event === 'start' ? 'Начало раздачи' : `${index}. ${event === 'resolve' ? 'После сброса' : 'Ход'}`,
+  })));
   if (inMatch('mahjong')) {
     const connection = mountMatch(root,'mahjong',match => {
       const table = match.forfeits.length
@@ -125,7 +131,7 @@ export function render(root) {
       room = {shared:true,table,seat:match.side - 1,names:match.names,mode:match.option};
       panel.innerHTML = roomMarkup(room);
       updateCountdown();
-    });
+    },showReplay);
     panel.onclick = event => {
       const id = event.target.closest('[data-move]')?.dataset.move;
       if (id) connection?.send({action:'play',id,tableVersion:room.table.version});
@@ -146,6 +152,8 @@ export function render(root) {
   const status = area.querySelector('[role="status"]');
   const say = message => { status.textContent = message; };
   const storage = 'table:mahjong:' + apiOrigin + ':';
+  const sound = watchOpponentMove();
+  let lastHistoryVersion;
   function lobby() {
     panel.innerHTML = online ? `<div class="mj-lobby">
       <form data-operation="create"><h2>Создать стол</h2>
@@ -163,6 +171,14 @@ export function render(root) {
       rendered = markup;
     }
     chat(value.messages || []);
+    if (value.table && value.table.version !== lastHistoryVersion) {
+      lastHistoryVersion = value.table.version;
+      request('/' + value.code + '/history',key).then(archive => {
+        if (room?.code !== value.code || lastHistoryVersion !== value.table.version || !area.isConnected) return;
+        sound(archive,value.seat + 1);
+        showReplay(archive);
+      }).catch(() => { if (lastHistoryVersion === value.table.version) lastHistoryVersion = undefined; });
+    }
     updateCountdown();
   }
   function updateCountdown() {
@@ -209,6 +225,10 @@ export function render(root) {
   area.onclick = event => {
     const button = event.target.closest('button');
     if (!room || !button) return;
+    if ('export' in button.dataset) {
+      run(async () => downloadHistory('mahjong',await request('/' + room.code + '/history',key)));
+      return;
+    }
     if ('leave' in button.dataset) {
       if (confirm('Покинуть партию и засчитать поражение?')) {
         run(async () => show(await request('/' + room.code + '/leave',key,{})));

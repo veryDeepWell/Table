@@ -42,7 +42,11 @@ test('online Go: private seats, shared state, stale moves and scoring', () => {
   assert.equal(post('/go/move',guest.key,{version:0,action:'pass'}).status,409);
   assert.equal(post('/go/move',guest.key,{version:1,action:'play',point:0}).status,400);
   assert.equal(post('/go/move',guest.key,{version:1,action:'pass'}).status,200);
-  const ended = post('/go/move',hostKey,{version:2,action:'pass'}).body;
+  const scoring = post('/go/move',hostKey,{version:2,action:'pass'}).body;
+  assert.equal(scoring.scoring,true);
+  assert.equal(scoring.ended,false);
+  assert.equal(post('/go/move',hostKey,{version:3,action:'automatic'}).body.ended,false);
+  const ended = post('/go/move',guest.key,{version:4,action:'automatic'}).body;
   assert.equal(ended.ended,true);
   assert.equal(ended.points[2],7.5);
   assert.equal(get('/go',guest.key).body.ended,true);

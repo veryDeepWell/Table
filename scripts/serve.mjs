@@ -5,6 +5,7 @@ import {roomApi} from '../server/http.mjs';
 import {createGoRoom} from '../server/go-room.mjs';
 import {createMatch} from '../server/match.mjs';
 import {networkGames} from '../src/online/games.js';
+import {launcherSource} from './launcher.mjs';
 
 const root = process.cwd();
 const goSecret = process.env.TABLE_GO_HOST_KEY;
@@ -28,6 +29,11 @@ const server = http.createServer(async (req,res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url,'http://localhost').pathname);
     if (pathname.startsWith('/api/')) return await api(req,res,pathname.slice(4));
+    if (pathname === '/room-launcher.py' && !goSecret) {
+      const source = await launcherSource();
+      res.setHeader('Content-Type','text/plain; charset=utf-8');
+      return res.end(source);
+    }
     const file = pathname === '/' ? path.join(root,'index.html') : path.resolve(root,'.' + pathname);
     if (file !== path.join(root,'index.html') && !file.startsWith(path.join(root,'src') + path.sep)) throw Error();
     const body = await readFile(file);

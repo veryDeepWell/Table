@@ -3,6 +3,8 @@ import {alphabet, coordinates, ranks} from './coordinates.js';
 import {loadSave, saveGame, saveMessage} from './local-save.js';
 import {forfeitMessage, inMatch, mountMatch} from '../online/client.js';
 import {mountLobby} from '../online/lobby.js';
+import {downloadHistory} from './history-export.js';
+import {boardReplay,mountReplay} from './replay.js';
 
 export function pieceMarkup(game, piece) {
   const type = piece.type.replace('+', '');
@@ -30,7 +32,7 @@ function gridBoard(game, state, legal, selected) {
 
 function renderRules(rules, source) {
   return `<section id="rules" class="rules-section">
-    <div class="section-heading"><div><span class="eyebrow">КАК ИГРАТЬ</span><h2>Правила и примеры</h2></div></div>
+    <h2>Правила</h2>
     <div class="rules-list">${rules.map(([title,text,example],i) => `<article class="rule classic-rule">
       <span class="rule-number">${String(i + 1).padStart(2,'0')}</span>
       <div><h3>${title}</h3><p>${text}</p>${example ? `<div class="rule-example"><b>Пример</b><p>${example}</p></div>` : ''}</div>
@@ -51,18 +53,16 @@ export function renderTable(root, game) {
   const saved = loadSave(key, value =>
     value?.state?.board?.length === state.board.length && Array.isArray(value.history) ? value : null);
   if (saved) ({state,history} = saved.value);
+  let archive = saved?.value.archive || {
+    initial:history[0] || state, previous:history.length ? [...history,state] : [],
+    complete:!saved, events:[],
+  };
   let saveLocation = saved?.location;
 
-  root.innerHTML = `<section class="game-intro classic-intro">
-    <a href="#/" class="back">← Все игры</a>
-    <div class="eyebrow">СТРАТЕГИЯ / ${game.variant}</div>
-    <h1>${game.name}<em>${game.subtitle}</em></h1>
-    <p>${game.description}</p><div class="intro-meta"><span>♙ 2 игрока</span><span>◉ ${network ? 'Сетевая партия' : 'На одном устройстве'}</span></div>
-  </section>
-  <div class="game-tabs"><a href="#play">Играть <span>↗</span></a><a href="#rules">Правила и примеры <span>↓</span></a></div>
+  root.innerHTML = `
   <section id="play" class="play-section classic-play">
     <div class="board-column">
-      <div class="board-heading"><h2>Игровая доска</h2></div>
+      <div class="board-heading"><h1>${game.name}</h1></div>
       <div data-game-board></div>
       <div class="board-caption">${game.hint}</div>
     </div>
@@ -76,7 +76,7 @@ export function renderTable(root, game) {
         <button data-action="restart" class="text-button" ${network ? 'hidden' : ''}>Начать заново</button>
       </div>
       <p class="save-note" data-save-note role="status" ${network ? 'hidden' : ''}></p>
-      <a href="#rules" class="text-link">К правилам ↓</a>
+      <button type="button" class="text-button" data-history-export ${network ? 'hidden' : ''}>Скачать историю партии</button>
     </aside>
   </section>${renderRules(game.rules,game.source)}`;
 
@@ -84,9 +84,32 @@ export function renderTable(root, game) {
   const choices = root.querySelector('[data-choices]');
   const saveNote = root.querySelector('[data-save-note]');
   const playSection = root.querySelector('#play');
+  const showReplay = mountReplay(playSection,board,position => (game.board || gridBoard)(game,position,[],null));
+  function describeMove(move) {
+    const point = index => {
+      if (game.id === 'connect-four') return alphabet[index];
+      if (game.id === 'backgammon') return ['Бар','Дом'][index - 24] || String(index + 1);
+      if (game.id === 'kalah') return 'Лунка ' + (index < 6 ? index + 1 : index - 6);
+      if (game.id === 'dots' || game.id === 'gomoku' || game.id === 'reversi') {
+        const size = game.engine.size;
+        return alphabet[index % size] + (size - Math.floor(index / size));
+      }
+      return label(index,game.size);
+    };
+    const from = move.from !== undefined ? point(move.from) + ' → ' : move.drop ? game.names[move.drop] + ' → ' : '';
+    return from + point(move.to);
+  }
+  const showHistory = data => showReplay(boardReplay(game.engine,data,describeMove));
   if (!network) mountLobby(playSection,game.id);
   const canMove = () => !network || Boolean(match?.ready && !match.ended && match.side === state.turn);
   let legal = [];
+  root.querySelector('[data-history-export]').onclick = () =>
+    downloadHistory(game.id,{game:game.id,...archive,final:state});
+
+  function persist() {
+    saveLocation = saveGame(key,{state,history:[...history],archive});
+    showHistory(archive);
+  }
 
   function refresh() {
     if (state.chain != null) selected = state.chain;
@@ -99,9 +122,10 @@ export function renderTable(root, game) {
     root.querySelector('h2[data-turn]').textContent = forfeited ? 'Партия завершена'
       : network && !match?.ready ? 'Ожидаем игроков'
       : result
-      ? (result.winner ? `${game.sides[result.winner - 1]} победили` : 'Ничья')
+      ? (result.winner ? `${game.sides[result.winner - 1]} ${game.singlePlayerLabels ? 'победил' : 'победили'}` : 'Ничья')
       : state.opening ? (network ? (canMove() ? 'Ваш первый бросок' : 'Первый бросок соперника') : 'Первый бросок')
-      : network ? (canMove() ? 'Ваш ход' : 'Ходит ' + match.names[state.turn - 1]) : `Ходят ${side.toLowerCase()}`;
+      : network ? (canMove() ? 'Ваш ход' : 'Ходит ' + match.names[state.turn - 1])
+      : `${game.singlePlayerLabels ? 'Ходит' : 'Ходят'} ${side.toLowerCase()}`;
     root.querySelector('#status').textContent = forfeited || result?.reason || (canMove() ? game.status(state) : '');
     board.innerHTML = (game.board || gridBoard)(game,state,legal,selected);
     const options = pending.length
@@ -120,11 +144,12 @@ export function renderTable(root, game) {
     }
   }
 
-  function commit(next) {
+  function commit(next,event,detail = {}) {
     if (next === state) return;
+    archive = {...archive,events:[...archive.events,{event,side:state.turn,...detail}]};
     history = [...history.slice(-19),state];
     state = next;
-    saveLocation = saveGame(key,{state,history});
+    persist();
     selected = null;
     pending = [];
     refresh();
@@ -132,7 +157,7 @@ export function renderTable(root, game) {
 
   function play(move) {
     if (network) connection.send({action:'play',index:legal.indexOf(move)});
-    else commit(game.engine.play(state,move));
+    else commit(game.engine.play(state,move),'play',{move});
   }
 
   playSection.onclick = event => {
@@ -141,14 +166,18 @@ export function renderTable(root, game) {
     if (button.dataset.action === 'undo') {
       if (!history.length) return;
       state = history.pop();
-      saveLocation = saveGame(key,{state,history:[...history]});
+      archive = archive.events.length
+        ? {...archive,events:archive.events.slice(0,-1)}
+        : {...archive,previous:archive.previous.slice(0,-1)};
+      persist();
       selected = null;
       pending = [];
     } else if (button.dataset.action === 'restart') {
       if (history.length && !confirm('Начать новую партию?')) return;
       state = game.engine.create();
       history = [];
-      saveLocation = saveGame(key,{state,history});
+      archive = {initial:state,previous:[],complete:true,events:[]};
+      persist();
       selected = null;
       pending = [];
     } else if (button.dataset.action === 'cancel') {
@@ -156,15 +185,16 @@ export function renderTable(root, game) {
     } else if (button.dataset.action === 'claim') {
       if (network) { connection.send({action:'claim'}); return; }
       const reason = game.engine.claim(state);
-      if (reason) commit({...state,result:{reason}});
+      if (reason) commit({...state,result:{reason}},'claim');
       return;
     } else if (button.dataset.action === 'roll') {
       if (network) { connection.send({action:'roll'}); return; }
-      commit(game.roll(state));
+      const next = game.roll(state);
+      commit(next,'roll',{dice:next.rolled});
       return;
     } else if (button.dataset.action === 'finish') {
       if (!state.result && game.engine.finish && confirm('Оба игрока согласны закончить партию?')) {
-        commit(game.engine.finish(state));
+        commit(game.engine.finish(state),'finish');
       }
       return;
     } else if (button.dataset.choice !== undefined) {
@@ -194,7 +224,7 @@ export function renderTable(root, game) {
       selected = null;
       pending = [];
       refresh();
-    });
-  }
+    },showHistory);
+  } else showHistory(archive);
   refresh();
 }

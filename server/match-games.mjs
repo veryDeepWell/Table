@@ -7,6 +7,8 @@ import * as shogi from '../src/games/shogi/engine.js';
 import * as dots from '../src/games/dots/engine.js';
 import * as connectFour from '../src/games/connect-four/engine.js';
 import * as mahjong from './mahjong.mjs';
+import {gomoku,reversi,kalah} from '../src/games/new-board-engines.js';
+import {battleship,domino} from './private-games.mjs';
 
 function boardGame(engine) {
   return {
@@ -15,6 +17,11 @@ function boardGame(engine) {
     view:state => {
       const {keys,positions,...board} = state;
       return {...board,canClaim:Boolean(engine.claim?.(state))};
+    },
+    record(state,body,next) {
+      if (body.action === 'play') return {move:engine.moves(state)[body.index]};
+      if (body.action === 'roll') return {dice:next.rolled};
+      return {};
     },
     move(state,side,body) {
       if (state.turn !== side) return null;
@@ -37,22 +44,26 @@ function boardGame(engine) {
 
 export const matchGames = {
   go:{
-    seats:2,create:go.createGame,ended:state => state.ended,
+    seats:2,create:go.createGame,ended:state => Boolean(state.confirmed),
     view(state) {
       const {history,...board} = state;
-      return {...board,points:state.ended ? go.score(state) : null};
+      return {...board,captured:go.lastCapture(state),points:state.confirmed ? go.score(state) : null};
     },
     move(state,side,body) {
+      if (state.ended) return go.scoringAction(state,side,body);
       if (state.turn !== side) return null;
       if (body.action === 'pass') return go.pass(state);
       if (body.action === 'play') return go.play(state,body.point);
       return null;
     },
+    record(state,body) { return Number.isInteger(body.point) ? {point:body.point} : {}; },
   },
   chess:boardGame(chess), checkers:boardGame(checkers), backgammon:boardGame(backgammon),
   shogi:boardGame(shogi), dots:boardGame(dots), 'connect-four':boardGame(connectFour),
+  gomoku:boardGame(gomoku), reversi:boardGame(reversi), kalah:boardGame(kalah),
+  battleship:{...battleship,hidden:true}, domino:{...domino,hidden:true},
   mahjong:{
-    seats:4,create:mahjong.deal,ended:state => state.phase === 'end',
+    seats:4,hidden:true,create:mahjong.deal,ended:state => state.phase === 'end',
     view:(state,side) => mahjong.tableView(state,side - 1),
     tick:mahjong.tick,
     move:(state,side,body,now) => body.action === 'play' &&

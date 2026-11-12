@@ -1,4 +1,10 @@
-import {goBoard, goPosition} from './board.js';
+import {mountScoring} from './scoring.js';
+import {downloadHistory} from '../history-export.js';
+import {goBoard,goPosition} from './board.js';
+import {mountReplay} from '../replay.js';
+import {goReplay} from './replay.js';
+import {decodeGo} from './save.js';
+import {watchOpponentMove} from '../../online/move-sound.js';
 import {readKey, remotePrefix, roomCode, roomPrefix, roomSlot, validKey, writeKey} from './room-code.js';
 import {forfeitMessage, mountMatch} from '../../online/client.js';
 import {mountChat} from '../../online/chat.js';
@@ -8,7 +14,7 @@ const colors = {1:'чёрные',2:'белые'};
 
 export function renderNetworkGo(root) {
   const play = root.querySelector('#play');
-  const board = play.querySelector('[data-go-field]');
+  const showReplay = mountReplay(play,play.querySelector('[data-go-field]'),position => goBoard(position,false));
   const status = play.querySelector('#status');
   const turn = play.querySelector('#turn');
   const pass = play.querySelector('#pass');
@@ -16,30 +22,24 @@ export function renderNetworkGo(root) {
     play.querySelector(selector).hidden = true;
   }
   play.querySelector('aside .eyebrow').textContent = 'СЕТЕВАЯ ПАРТИЯ';
-  play.querySelector('.board-heading h2').textContent = 'Сетевая партия';
   turn.textContent = 'Ожидаем игроков';
   pass.hidden = true;
+  const paintScoring = mountScoring(play,(action,point) => connection?.send({action,point}));
   const connection = mountMatch(root,'go',match => {
     const {state} = match;
-    const canMove = match.ready && !match.ended && match.side === state.turn;
-    board.innerHTML = goBoard(state,canMove);
+    const canMove = match.ready && !match.ended && !state.ended && match.side === state.turn;
+    paintScoring(state,canMove,{forfeited:Boolean(match.forfeits.length),side:match.side,captured:state.captured});
     pass.hidden = !canMove;
-    turn.textContent = match.ended ? 'Партия завершена' : !match.ready ? 'Ждём белых'
+    turn.textContent = match.ended ? 'Партия завершена' : state.ended ? 'Подсчёт очков' : !match.ready ? 'Ждём белых'
       : canMove ? 'Ваш ход' : 'Ходит ' + match.names[state.turn - 1];
     status.textContent = forfeitMessage(match) || (state.points
       ? `Победили ${colors[state.points[1] > state.points[2] ? 1 : 2]}. Счёт ${state.points[1]} : ${state.points[2]}.`
-      : state.passes ? 'Ещё один пас завершит партию.' : '');
+      : state.passes === 1 ? 'Ещё один пас, и начнётся подсчёт.' : '');
     play.querySelector('[data-last-position]').textContent = state.last == null ? ''
       : 'Последний ход: ' + goPosition(state.last,state.size);
-    play.querySelector('#black-captures').textContent = state.captures[1];
-    play.querySelector('#white-captures').textContent = state.captures[2];
     play.querySelector('.capture-note').textContent = `Вы играете за ${match.side === 1 ? 'чёрных' : 'белых'}.`;
-  });
+  },archive => showReplay(goReplay(decodeGo(archive))));
   pass.onclick = () => connection?.send({action:'pass'});
-  board.onclick = event => {
-    const point = event.target.closest('[data-i]:enabled');
-    if (point) connection?.send({action:'play',point:Number(point.dataset.i)});
-  };
 }
 async function api(origin,path,key,body) {
   const response = await fetch(origin + '/api/go' + path,{
@@ -81,7 +81,8 @@ export function renderRoom(root) {
     history.replaceState(null,'',roomPrefix + code);
   }
   const area = root.querySelector('#play');
-  const board = area.querySelector('[data-go-field]');
+  const showReplay = mountReplay(area,area.querySelector('[data-go-field]'),position => goBoard(position,false));
+  const sound = watchOpponentMove();
   const turn = area.querySelector('#turn');
   const status = area.querySelector('#status');
   area.querySelector('#size').disabled = true;
@@ -90,13 +91,13 @@ export function renderRoom(root) {
     area.querySelector(selector).hidden = true;
   }
   area.querySelector('aside .eyebrow').textContent = 'СЕТЕВАЯ ПАРТИЯ';
-  area.querySelector('.board-heading h2').textContent = 'Сетевая партия';
   turn.textContent = 'Комната го';
   const actions = area.querySelector('.game-actions');
   actions.insertAdjacentHTML('beforeend',`
     <button class="button dark" data-join hidden>Играть за белых</button>
     <button class="button secondary" data-leave hidden>Покинуть партию</button>
     <button class="button secondary" data-invite hidden>Скопировать приглашение</button>
+    <button class="button secondary" data-export hidden>Скачать историю партии</button>
     <input class="go-room-invite" aria-label="Ссылка приглашения" data-invite-url readonly hidden>`);
   const join = area.querySelector('[data-join]');
   const pass = area.querySelector('#pass');
@@ -104,6 +105,11 @@ export function renderRoom(root) {
   const leave = area.querySelector('[data-leave]');
   const invite = area.querySelector('[data-invite]');
   const link = area.querySelector('[data-invite-url]');
+  const exportButton = area.querySelector('[data-export]');
+  exportButton.onclick = async () => {
+    try { downloadHistory('go',await request('/history',key)); }
+    catch (error) { status.textContent = error.message; }
+  };
   if (!validKey(code)) {
     status.textContent = 'Проверьте код комнаты или ссылку приглашения.';
     return;
@@ -127,21 +133,21 @@ export function renderRoom(root) {
   const chat = mountChat(chatArea,async text => {
     show(await request('/chat',key,{text}));
   });
-  const canMove = () => state?.ready && !state.ended && state.turn === state.side && !disconnected;
+  const canMove = () => state?.ready && !state.ended && !state.scoring && state.turn === state.side && !disconnected;
 
+  const paintScoring = mountScoring(area,(action,point) => send(action,point));
   function paint() {
     if (!state) return;
-    board.innerHTML = goBoard(state,canMove());
+    paintScoring({...state,ended:state.ended || state.scoring},canMove(),{side:state.side,forfeited:Boolean(state.forfeits?.length),captured:state.captured});
     area.querySelector('[data-last-position]').textContent = state.last == null ? '' : 'Последний ход: ' + goPosition(state.last,state.size);
-    area.querySelector('#black-captures').textContent = state.captures[1];
-    area.querySelector('#white-captures').textContent = state.captures[2];
     area.querySelector('.capture-note').textContent = `Вы играете за ${state.side === 1 ? 'чёрных' : 'белых'}.`;
     pass.hidden = !canMove();
     invite.hidden = state.side !== 1 || state.ready;
     link.hidden = invite.hidden || link.hidden;
     leave.hidden = !state.ready || state.ended;
+    exportButton.hidden = !state.ready;
     leave.disabled = disconnected;
-    turn.textContent = state.ended ? 'Партия завершена'
+    turn.textContent = state.ended ? 'Партия завершена' : state.scoring ? 'Подсчёт очков'
       : !state.ready ? 'Ждём белых'
       : state.turn === state.side ? 'Ваш ход' : 'Ход соперника';
     const forfeits = state.forfeits || [];
@@ -151,7 +157,7 @@ export function renderRoom(root) {
     status.textContent = disconnected ? 'Нет связи с сервером. Пробуем подключиться снова.'
       : forfeits.length ? forfeitMessage
       : state.ended ? `Победили ${colors[state.points[1] > state.points[2] ? 1 : 2]}. Счёт: ${state.points[1]} : ${state.points[2]}.`
-      : state.passes ? 'Ещё один пас завершит партию.'
+      : state.passes === 1 ? 'Ещё один пас, и начнётся подсчёт.'
       : !state.ready ? 'Отправьте приглашение второму игроку.' : '';
   }
 
@@ -160,20 +166,21 @@ export function renderRoom(root) {
     chat(next.messages || []);
     if (!disconnected && state?.version === next.version && state.ready === next.ready) return;
     state = next;
+    request('/history',key).then(archive => {
+      if (state !== next || !area.isConnected) return;
+      sound(archive,next.side);
+      showReplay(goReplay(decodeGo(archive)));
+    }).catch(() => {});
     disconnected = false;
     paint();
   }
   async function send(action, point) {
-    if (!canMove() || busy) return;
+    if ((!canMove() && !state?.scoring) || busy || disconnected) return;
     busy = true;
     try { show(await request('/move',key,{action,point,version:state.version})); }
     catch (error) { status.textContent = error.message; }
     finally { busy = false; }
   }
-  board.onclick = event => {
-    const point = event.target.closest('[data-i]');
-    if (point) send('play',Number(point.dataset.i));
-  };
   pass.onclick = () => send('pass');
   leave.onclick = async () => {
     if (busy || !confirm('Покинуть партию и засчитать поражение?')) return;
