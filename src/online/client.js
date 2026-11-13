@@ -13,6 +13,9 @@ export async function roomRequest(origin,path,key,body) {
     headers:{...(key && {Authorization:'Bearer ' + key}), ...(body !== undefined && {'Content-Type':'application/json'})},
     body:body === undefined ? undefined : JSON.stringify(body),
     cache:'no-store',keepalive:path.endsWith('/leave'),signal:AbortSignal.timeout(5000),
+  }).catch(error => {
+    if (error.name === 'TimeoutError') throw new Error('Игровой сервер не ответил вовремя.');
+    throw new Error('Нет связи с игровым сервером. Проверьте, что окно сервера открыто.');
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || !data) throw Object.assign(new Error(data?.error || 'Игровой сервер недоступен.'),{status:response.status});
@@ -58,9 +61,7 @@ export function mountMatch(root,game,paint,showHistory) {
   const api = (path,body) => roomRequest(room.origin,'/api/match' + path,key,body);
   const input = panel.querySelector('input');
   input.value = location.href;
-  const chatContainer = document.createElement('div');
-  play.after(chatContainer);
-  const chat = mountChat(chatContainer,
+  const chat = mountChat(play,
     text => queue(async () => show(await api('/chat',{text}))));
   let pendingName;
   const profile = event => { if (key) pendingName = event.detail; };

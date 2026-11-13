@@ -17,12 +17,13 @@ from threading import Thread
 import time
 from tempfile import TemporaryDirectory
 from urllib.parse import quote, urlsplit
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 import webbrowser
 
 
 ROOT = Path(__file__).resolve().parent
-QUICK_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com\b")
+QUICK_URL = re.compile(r"\|\s+(https://[a-z0-9-]+\.trycloudflare\.com)\s+\|")
 LOCAL_URL = re.compile(r"http://127\.0\.0\.1:\d+\b")
 
 
@@ -48,17 +49,22 @@ def start(args, processes, *, env=None):
 
 def wait_for_url(messages, pattern, seconds):
     until = time.monotonic() + seconds
+    last_error = ""
     while time.monotonic() < until:
         try:
             line = messages.get(timeout=max(0, until - time.monotonic()))
         except Empty:
             break
         if line is None:
-            raise RuntimeError("Процесс завершился до получения адреса.")
+            detail = f" {last_error}" if last_error else ""
+            raise RuntimeError(f"Процесс завершился до получения адреса.{detail}")
         match = pattern.search(line)
         if match:
-            return match.group()
-    raise RuntimeError("Не удалось получить адрес за отведённое время.")
+            return match.group(1) if match.lastindex else match.group()
+        if " ERR " in line:
+            last_error = line.split(" ERR ", 1)[1].strip()
+    detail = f" {last_error}" if last_error else ""
+    raise RuntimeError(f"Не удалось получить адрес за отведённое время.{detail}")
 
 
 def stop(process):
@@ -70,6 +76,38 @@ def stop(process):
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+
+
+def wait_for_tunnel(origin, api, site, process, seconds=35):
+    deadline = time.monotonic() + seconds
+    problem = "сервер ещё не отвечает"
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError("cloudflared остановился до подключения комнаты.")
+        try:
+            headers = {"Origin":site, "Access-Control-Request-Method":"GET",
+                       "Access-Control-Request-Headers":"authorization"} if site else {}
+            if headers:
+                with urlopen(Request(origin + api, headers=headers, method="OPTIONS"), timeout=4) as response:
+                    if response.status != 204 or response.headers.get("Access-Control-Allow-Origin") != site:
+                        raise ValueError("туннель не разрешил подключение с сайта")
+            try:
+                with urlopen(Request(origin + api, headers={"Origin":site} if site else {}), timeout=4):
+                    raise ValueError("туннель вернул неожиданный ответ")
+            except HTTPError as error:
+                with error:
+                    if error.code != 401:
+                        raise
+                    if site and error.headers.get("Access-Control-Allow-Origin") != site:
+                        raise ValueError("игровой сервер не разрешил подключение с сайта")
+                    if not json.load(error).get("error"):
+                        raise ValueError("туннель не дошёл до игрового сервера")
+                    return
+        except (OSError, ValueError) as error:
+            problem = str(error)
+        time.sleep(1)
+    raise RuntimeError(f"Туннель получил адрес, но игровой сервер недоступен через него ({problem}).")
+
 
 def read_setup(value):
     match = re.fullmatch(r"table-setup-v1\.([a-z-]+)\.(9|13|19|chinese|riichi|standard)\.([0-9a-f]{64})\.(.+)", value)
@@ -160,6 +198,8 @@ def main():
             origin = wait_for_url(
                 start([tunnel, "tunnel", "--url", local], processes), QUICK_URL, 40,
             )
+            print("Проверяю доступность игровой комнаты через туннель…", flush=True)
+            wait_for_tunnel(origin, api, site, processes[-1])
         if setup is not None:
             signed = (game + "/" if game else "") + origin + "/" + code
             proof = hmac.digest(host_key.encode(), signed.encode(), "sha256").hex()

@@ -30,7 +30,7 @@ export function mountLobby(playSection,game) {
   create.onclick = async () => {
     create.disabled = true;
     try {
-      let response = await fetch(new URL('../../room-launcher.txt',import.meta.url));
+      let response = await fetch(new URL('../../room-launcher.txt',import.meta.url),{cache:'no-cache'});
       if (response.status === 404 && ['localhost','127.0.0.1'].includes(location.hostname)) {
         response = await fetch(new URL('../../room-launcher.py',import.meta.url));
       }

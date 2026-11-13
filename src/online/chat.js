@@ -1,11 +1,12 @@
-export function mountChat(parent,send) {
+export function mountChat(play,send) {
+  const parent = play.querySelector('[data-game-chat]');
   const section = document.createElement('section');
   section.className = 'match-chat';
-  section.hidden = true;
   section.innerHTML = `<h2>Чат партии</h2><div role="log" aria-label="Сообщения" class="chat-messages"></div>
-    <form><label>Сообщение<input name="text" required maxlength="300" autocomplete="off"></label>
+    <p data-chat-wait>Чат откроется после подключения к комнате.</p>
+    <form hidden><label>Сообщение<input name="text" required maxlength="300" autocomplete="off"></label>
       <button class="button dark">Отправить</button></form><p role="status"></p>`;
-  parent.append(section);
+  parent.replaceChildren(section);
   const log = section.querySelector('[role="log"]');
   const input = section.querySelector('input');
   const status = section.querySelector('[role="status"]');
@@ -24,7 +25,8 @@ export function mountChat(parent,send) {
     finally { button.disabled = false; }
   };
   return messages => {
-    section.hidden = false;
+    section.querySelector('form').hidden = false;
+    section.querySelector('[data-chat-wait]').hidden = true;
     const following = log.scrollHeight - log.scrollTop - log.clientHeight < 32;
     for (const {id,name,text} of messages) {
       if (id <= newest) continue;

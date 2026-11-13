@@ -144,9 +144,7 @@ export function render(root) {
   }
   mountLobby(area,'mahjong');
   if (!online) return;
-  const chatArea = document.createElement('div');
-  area.after(chatArea);
-  const chat = mountChat(chatArea,async text => {
+  const chat = mountChat(area,async text => {
     await run(async () => show(await request('/' + room.code + '/chat',key,{text})),false,true);
   });
   const status = area.querySelector('[role="status"]');

@@ -1,9 +1,10 @@
+import {mountGameLayout} from './game-layout.js';
+
 export function mountReplay(play,live,renderPosition) {
   const sidebar = document.createElement('aside');
   sidebar.className = 'move-history';
   sidebar.innerHTML = '<h2>История ходов</h2><button class="text-button" hidden>К текущей позиции</button><ol></ol><p>Ходов пока нет.</p>';
-  play.prepend(sidebar);
-  play.classList.add('with-history');
+  mountGameLayout(play,live,sidebar);
   const preview = document.createElement('div');
   preview.className = 'replay-position';
   preview.inert = true;

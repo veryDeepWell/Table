@@ -128,9 +128,7 @@ export function renderRoom(root) {
   let state;
   let busy = false;
   let disconnected = false;
-  const chatArea = document.createElement('div');
-  area.after(chatArea);
-  const chat = mountChat(chatArea,async text => {
+  const chat = mountChat(area,async text => {
     show(await request('/chat',key,{text}));
   });
   const canMove = () => state?.ready && !state.ended && !state.scoring && state.turn === state.side && !disconnected;
