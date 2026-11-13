@@ -47,15 +47,16 @@ test('four domino seats each get seven distinct tiles and only the opening seat 
   assert.ok(archive.positions.every(entry => !('hands' in entry.position) && entry.position.hand.length === 7));
 });
 
-for (const game of networkGames.filter(id => !['mahjong','battleship','domino'].includes(id))) {
+for (const game of networkGames.filter(id => !['mahjong','battleship','domino','old-maid','eights','hearts','durak','thousand','holdem'].includes(id))) {
   test(`${game}: shared room validates turns and synchronizes a move`,() => {
     const match = createMatch(game,host,game === 'go' ? 9 : 'standard');
     const move = {action:game === 'backgammon' ? 'roll' : 'play',index:0,point:0,version:0};
     assert.equal(request(match,'/move',host,move).status,409);
     const guest = join(match,'Гость');
     assert.equal(guest.ready,true);
-    assert.equal(request(match,'/move',guest.key,move).status,400);
-    const played = request(match,'/move',host,move);
+    const [first,second] = guest.state.turn === 2 ? [guest.key,host] : [host,guest.key];
+    assert.equal(request(match,'/move',second,move).status,400);
+    const played = request(match,'/move',first,move);
     assert.equal(played.status,200);
     assert.equal(played.body.version,1);
     assert.notDeepEqual(played.body.state,guest.state);

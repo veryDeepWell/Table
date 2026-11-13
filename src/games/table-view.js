@@ -86,7 +86,9 @@ export function renderTable(root, game) {
   const playSection = root.querySelector('#play');
   const showReplay = mountReplay(playSection,board,position => (game.board || gridBoard)(game,position,[],null));
   function describeMove(move) {
+    if (game.id === 'janggi' && move.from === move.to) return 'Пас';
     const point = index => {
+      if (game.notation) return game.notation(index);
       if (game.id === 'connect-four') return alphabet[index];
       if (game.id === 'backgammon') return ['Бар','Дом'][index - 24] || String(index + 1);
       if (game.id === 'kalah') return 'Лунка ' + (index < 6 ? index + 1 : index - 6);
@@ -191,6 +193,10 @@ export function renderTable(root, game) {
       if (network) { connection.send({action:'roll'}); return; }
       const next = game.roll(state);
       commit(next,'roll',{dice:next.rolled});
+      return;
+    } else if (button.dataset.action === 'pass') {
+      const pass = legal.find(move => move.from === move.to);
+      if (pass) play(pass);
       return;
     } else if (button.dataset.action === 'finish') {
       if (!state.result && game.engine.finish && confirm('Оба игрока согласны закончить партию?')) {

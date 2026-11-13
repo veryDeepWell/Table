@@ -9,6 +9,10 @@ import * as connectFour from '../src/games/connect-four/engine.js';
 import * as mahjong from './mahjong.mjs';
 import {gomoku,reversi,kalah} from '../src/games/new-board-engines.js';
 import {battleship,domino} from './private-games.mjs';
+import * as xiangqi from '../src/games/xiangqi/engine.js';
+import {oldMaid,eights,hearts,durak,thousand} from './card-games.mjs';
+import {holdem} from './holdem.mjs';
+import {janggi,hnefatafl} from '../src/games/variant-engines.js';
 
 function boardGame(engine) {
   return {
@@ -61,6 +65,10 @@ export const matchGames = {
   chess:boardGame(chess), checkers:boardGame(checkers), backgammon:boardGame(backgammon),
   shogi:boardGame(shogi), dots:boardGame(dots), 'connect-four':boardGame(connectFour),
   gomoku:boardGame(gomoku), reversi:boardGame(reversi), kalah:boardGame(kalah),
+  xiangqi:boardGame(xiangqi),
+  'old-maid':oldMaid(),
+  eights,hearts,durak,thousand,holdem,
+  janggi:boardGame(janggi),hnefatafl:boardGame(hnefatafl),
   battleship:{...battleship,hidden:true}, domino:{...domino,hidden:true},
   mahjong:{
     seats:4,hidden:true,create:mahjong.deal,ended:state => state.phase === 'end',

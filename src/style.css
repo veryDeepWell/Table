@@ -768,3 +768,71 @@ header nav { align-items: center; gap: clamp(12px,2.5vw,28px); }
   .mj-lobby { grid-template-columns: 1fr; }
   .mj-tile { width: 30px; height: 38px; }
 }
+.cover-xiangqi { background: #ead9bf; }
+.cover-xiangqi .cover-pieces b:first-child { color: #a32d26; }
+.coordinate-xiangqi { --field-inset: 0px; }
+.xiangqi-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(9,minmax(0,1fr));
+  grid-template-rows: repeat(10,minmax(0,1fr));
+  aspect-ratio: 9 / 10;
+  background: #e0bc88;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px #b88a54;
+  color: #7f5631;
+}
+.xiangqi-point { position: relative; border: 0; padding: 0; background: none; color: inherit; }
+.xiangqi-point:disabled { opacity: 1; }
+.xiangqi-point::before, .xiangqi-point::after { content: ''; position: absolute; pointer-events: none; background: currentColor; }
+.xiangqi-point::before { inset: 50% 0 auto; height: 1px; }
+.xiangqi-point::after { inset: 0 auto 0 50%; width: 1px; }
+.xiangqi-point.top::after { top: 50%; }
+.xiangqi-point.bottom::after { bottom: 50%; }
+.xiangqi-point.left::before { left: 50%; }
+.xiangqi-point.right::before { right: 50%; }
+.xiangqi-palace {
+  position: absolute;
+  left: 38.889%;
+  width: 22.222%;
+  height: 20%;
+  pointer-events: none;
+  background: linear-gradient(45deg,transparent 49.5%,currentColor 50%,transparent 50.5%),
+    linear-gradient(-45deg,transparent 49.5%,currentColor 50%,transparent 50.5%);
+}
+.xiangqi-palace.north { top: 5%; }
+.xiangqi-palace.south { bottom: 5%; }
+.xiangqi-piece {
+  display: grid; place-items: center; position: absolute; z-index: 1; inset: 8%;
+  border-radius: 50%; border: 1px solid currentColor; background: #f8e2b9;
+  color: #292725; box-shadow: 0 2px 3px #58391a55; font-size: clamp(13px,3vw,25px);
+}
+.xiangqi-piece.side-1 { color: #a32d26; }
+.xiangqi-point.last .xiangqi-piece { background: #ffefcc; }
+.xiangqi-point.selected .xiangqi-piece, .xiangqi-point.target .xiangqi-piece { outline: 2px solid #34604a; }
+.xiangqi-point.target:not(:has(.xiangqi-piece))::before {
+  z-index: 1; inset: 42%; width: auto; height: auto; border-radius: 50%; background: #34604a;
+}
+.card-seat { margin-block: 12px; }
+.card-seat h2 { font-size: 18px; letter-spacing: -.3px; margin-bottom: 6px; }
+.card-hand { display: flex; flex-wrap: wrap; gap: 6px; }
+.playing-card { display: grid; place-items: center; width: 40px; min-height: 56px; padding: 0; border: 1px solid #a9ae99; border-radius: 4px; background: #fffaf0; color: #282b25; font-weight: 700; }
+.playing-card.card-back { background: var(--green); color: white; }
+.card-order { display: flex; gap: 2px; margin-top: 3px; }
+.card-order .button { padding: 1px 3px; }
+.cover-old-maid, .cover-durak, .cover-eights, .cover-hearts, .cover-thousand, .cover-holdem { background: #e4e7d7; }
+.cover-janggi { background: #ebd9c0; }
+.cover-hnefatafl { background: #ded1bc; }
+.variant-board { position: relative; display: grid; grid-template-columns: repeat(var(--columns),1fr); aspect-ratio: var(--columns) / var(--rows); background: #e7ca97; }
+.variant-cell { padding: 0; position: relative; background: none; border: 1px solid #99774e; color: #38352d; }
+.variant-cell:disabled { opacity: 1; }
+.variant-cell.special { background: #caa56e; }
+.variant-cell.selected, .variant-cell.target { background: #f5dfb3; }
+.variant-cell.target:empty::before { content: '•'; color: #344b38; }
+.variant-piece { position: relative; z-index: 1; font-size: clamp(14px,3vw,25px); }
+.janggi .variant-piece.side-1 { color: #24536a; }
+.janggi .variant-piece.side-2 { color: #a32d26; }
+.janggi .variant-cell { border: 0; color: #99774e; }
+.janggi .variant-cell.target:empty::before { content: ''; inset: 42%; width: auto; height: auto; border-radius: 50%; background: #344b38; }
+.janggi .variant-piece { display: grid; place-items: center; position: absolute; inset: 10%; background: #f8e2b9; border: 1px solid currentColor; border-radius: 20%; }
+.hnefatafl .variant-piece.side-1 { color: #fff8ea; text-shadow: 0 0 2px #282b25; }
