@@ -31,7 +31,8 @@ export function roomApi({origin = process.env.TABLE_ORIGIN, rooms = createRooms(
       }
     }
     const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
-    const response = rooms({method:req.method,path,token,body});
+    const response = await rooms({method:req.method,path,token,body,
+      address:req.headers['cf-connecting-ip'] || req.socket.remoteAddress});
     return send(response.status,response.body);
   };
 }

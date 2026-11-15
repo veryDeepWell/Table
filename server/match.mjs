@@ -1,4 +1,4 @@
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomInt} from 'node:crypto';
 import {expiredSeats} from './presence.mjs';
 import {addMessage, playerName} from './chat.mjs';
 import {matchGames} from './match-games.mjs';
@@ -9,10 +9,12 @@ const token = () => randomBytes(24).toString('base64url');
 const reply = (status,body) => ({status,body});
 const fail = (status,error) => reply(status,{error});
 
-export function createMatch(game, hostKey, option, clock = Date.now) {
+export function createMatch(game, hostKey, option, clock = Date.now, {hostSide = 1, hostName = '', randomSeats = false, managed = false} = {}) {
   const adapter = matchGames[game];
   const code = token();
-  const seats = [{key:hostKey,name:''}];
+  const joinPath = managed ? '/match/join' : '/match/' + code + '/join';
+  const seats = Array(adapter.seats).fill(null);
+  seats[hostSide - 1] = {key:hostKey,name:hostName};
   const messages = [];
   let state = adapter.create(option);
   const hidden = adapter.hidden ? createMahjongHistory((position,seat) => adapter.view(position,seat+1),adapter.seats) : null;
@@ -21,11 +23,12 @@ export function createMatch(game, hostKey, option, clock = Date.now) {
   let lastSeen = [];
   let forfeits = [];
   let version = 0;
-  const ready = () => seats.length === adapter.seats;
+  const ready = () => seats.every(Boolean);
   const ended = () => Boolean(forfeits.length) || adapter.ended(state);
   const view = side => ({
     game, option, side, version, ready:ready(), ended:ended(), forfeits,
-    names:seats.map(seat => seat.name), messages,
+    names:seats.map(seat => seat?.name || '').slice(0,seats.findLastIndex(Boolean) + 1),
+    occupied:seats.filter(Boolean).length, host:side === hostSide, messages,
     state:adapter.hidden && !ready() ? null : adapter.view(state,side),
   });
   function forfeit(indices,now) {
@@ -38,22 +41,25 @@ export function createMatch(game, hostKey, option, clock = Date.now) {
   return function request({method,path,token:key,body}) {
     const now = clock();
     if (path === '/match/host' && method === 'GET' && key === hostKey) return reply(200,{code});
-    if (path === '/match/' + code + '/join' && method === 'POST') {
+    if (path === joinPath && method === 'POST') {
       if (ready()) return fail(409,'В комнате нет свободных мест.');
       const name = playerName(body?.name);
       if (!name) return fail(400,'Введите имя игрока.');
       const guestKey = token();
-      seats.push({key:guestKey,name});
+      const free = seats.flatMap((seat,index) => seat ? [] : [index]);
+      const index = free[randomSeats ? randomInt(free.length) : 0];
+      seats[index] = {key:guestKey,name};
       if (ready()) {
         lastSeen = seats.map(() => now);
         hidden?.record(state,'start',now);
       }
-      return reply(200,{key:guestKey,...view(seats.length)});
+      return reply(200,{key:guestKey,...view(index + 1)});
     }
-    const index = seats.findIndex(seat => seat.key === key);
+    const index = seats.findIndex(seat => seat?.key === key);
     if (index < 0) return fail(401,'Нужен ключ игрока. Откройте приглашение.');
     const side = index + 1;
-    if (ready() && !ended()) {
+    const wasEnded = ended();
+    if (ready() && !wasEnded) {
       if (path === '/match/leave' && method === 'POST') forfeit([index],now);
       else forfeit(expiredSeats(lastSeen,now),now);
       lastSeen[index] = now;
@@ -65,13 +71,22 @@ export function createMatch(game, hostKey, option, clock = Date.now) {
     }
     if (path === '/match' && method === 'GET') return reply(200,view(side));
     if (path === '/match/history' && method === 'GET') {
-      const archive = {game,option,side,names:seats.map(seat => seat.name),forfeits,events};
+      const archive = {game,option,side,names:view(side).names,forfeits,events};
       if (hidden) return reply(200,{...archive,positions:hidden.read(index)});
       if (game === 'go') return reply(200,{...encodeGo(state),...archive});
       return reply(200,{...archive,initial,final:adapter.view(state,side)});
     }
     if (method !== 'POST') return fail(404,'Действие не найдено.');
-    if (path === '/match/leave') return reply(200,view(side));
+    if (path === '/match/leave') {
+      if (managed && key === hostKey && (!ready() || wasEnded && body?.close === true)) {
+        return reply(200,{closed:true});
+      }
+      if (managed && !ready()) {
+        seats[index] = null;
+        return reply(200,{left:true});
+      }
+      return reply(200,view(side));
+    }
     if (path === '/match/name') {
       const name = playerName(body?.name);
       if (!name) return fail(400,'Введите имя до 24 символов.');

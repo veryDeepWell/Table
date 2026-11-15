@@ -1,79 +1,59 @@
-import {draftSlot,matchSlot,parseInvite,readKey,roomRoute,verifyInvite,writeKey} from './codes.js';
-import {remotePrefix,roomSlot} from '../games/go/room-code.js';
+import {matchSlot,serverMatchRoute,writeKey} from './codes.js';
+import {roomRequest} from './client.js';
+import {askName,playerName} from './profile.js';
+import {lobbyRoute,serverOrigin} from './server.js';
+import {seatLabels} from './games.js';
+
+const credentials = `<label>Имя комнаты<input name="room" required minlength="3" maxlength="32"
+    pattern="[A-Za-z0-9_&#92;-]{3,32}" placeholder="qwerty" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+  <label>Пароль комнаты<input name="password" type="password" required minlength="4" maxlength="64" autocomplete="off"></label>`;
 
 export function mountLobby(playSection,game) {
   const details = document.createElement('details');
   details.className = 'match-lobby-settings';
   details.innerHTML = `<summary>Играть по сети</summary><div class="match-lobby-lobby">
-    <section class="match-lobby-card"><h2>Создать комнату</h2>
-      ${game === 'go' ? '<label>Размер доски <select data-option><option>9</option><option>13</option><option>19</option></select></label>'
-        : game === 'mahjong' ? '<label>Вариант <select data-option><option value="chinese">Китайский</option><option value="riichi">Риичи</option></select></label>' : ''}
-      <button class="button dark" data-create>Скачать файл запуска</button>
-      <p role="status" data-launch-status></p>
-    </section>
-    <form class="match-lobby-card"><h2>Войти в комнату</h2>
-      <label>Код комнаты<textarea name="room" required rows="3" maxlength="300" spellcheck="false"></textarea></label>
-      <button class="button dark" value="guest">Войти как гость</button>
-      <button class="button secondary" value="host">Войти как ведущий</button>
-      <p role="status" data-join-status></p>
+    <form class="match-lobby-card" data-create><h2>Создать комнату</h2>
+      ${credentials}
+      ${game === 'go' ? '<label>Размер доски <select name="option"><option>9</option><option>13</option><option>19</option></select></label>'
+        : game === 'mahjong' ? '<label>Вариант <select name="option"><option value="chinese">Китайский</option><option value="riichi">Риичи</option></select></label>' : ''}
+      <label>Ваша сторона или место<select name="side"><option value="random">Случайная рассадка</option>
+        ${seatLabels(game).map((label,index) => `<option value="${index + 1}">${label}</option>`).join('')}</select></label>
+      <button class="button dark">Создать комнату</button><p role="status"></p>
+    </form>
+    <form class="match-lobby-card" data-join><h2>Войти в комнату</h2>
+      ${credentials}
+      <button class="button dark">Войти в комнату</button><p role="status"></p>
     </form>
   </div>`;
   playSection.before(details);
-  details.open = location.hash === `#/games/${game}/online` || game === 'mahjong';
-  const launchStatus = details.querySelector('[data-launch-status]');
-  const option = details.querySelector('[data-option]');
-  const status = details.querySelector('[data-join-status]');
-  const draftKey = draftSlot(game);
-  const draft = readKey(draftKey);
-  if (draft && option) option.value = draft.split('.')[0];
-  const create = details.querySelector('[data-create]');
-  create.onclick = async () => {
-    create.disabled = true;
-    try {
-      let response = await fetch(new URL('../../room-launcher.txt',import.meta.url),{cache:'no-cache'});
-      if (response.status === 404 && ['localhost','127.0.0.1'].includes(location.hostname)) {
-        response = await fetch(new URL('../../room-launcher.py',import.meta.url));
-      }
-      if (!response.ok) throw new Error(`Шаблон файла запуска недоступен (HTTP ${response.status}).`);
-      const source = await response.text();
-      if (!source.startsWith('BUNDLE = ')) throw new Error('Сайт вернул неверный шаблон файла запуска.');
-      const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)),byte => byte.toString(16).padStart(2,'0')).join('');
-      const settings = (option?.value || 'standard') + '.' + secret;
-      const local = ['127.0.0.1','localhost'].includes(location.hostname);
-      const setup = `table-setup-v1.${game}.${settings}.${location.origin}`;
-      const url = URL.createObjectURL(new Blob([
-        `LAUNCH = {"setup": ${JSON.stringify(setup)}, "page": ${JSON.stringify(location.href.split('#')[0])}, "local": ${local ? 'True' : 'False'}}\n`,
-        source,
-      ],{type:'application/octet-stream'}));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `za-stolom-${game}.py`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url),1000);
-      writeKey(draftKey,settings);
-      launchStatus.textContent = 'Запусти скачанный файл. Когда откроется комната, скопируй приглашение.';
-    } catch (error) {
-      launchStatus.textContent = error instanceof TypeError
-        ? 'Не удалось подключиться к сайту для скачивания файла запуска.'
-        : error.message;
-    } finally { create.disabled = false; }
-  };
-  details.querySelector('form').onsubmit = async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const value = new FormData(form).get('room').trim();
-    const room = parseInvite(value,game);
-    if (!room) { status.textContent = 'Вставь полный код комнаты для этой игры.'; return; }
-    if (event.submitter?.value === 'host') {
-      const secret = readKey(room.legacy ? 'table:go:launch-draft' : draftKey)?.split('.')[1];
-      if (!secret || !await verifyInvite(room,secret).catch(() => false)) {
-        status.textContent = 'Код комнаты не совпадает с кодом запуска в этой вкладке.';
-        return;
-      }
-      if (!form.isConnected) return;
-      writeKey(room.legacy ? roomSlot(room.origin,room.code) : matchSlot(room),secret);
-    }
-    location.hash = (room.legacy ? remotePrefix : roomRoute(game) + 'match/') + encodeURIComponent(value);
-  };
+  const route = lobbyRoute(game);
+  details.open = location.hash === route || location.hash.startsWith(route + '/') || game === 'mahjong';
+  const invite = location.hash.slice(route.length + 1);
+  if (location.hash.startsWith(route + '/') && /^[a-z0-9_-]{3,32}$/.test(invite)) {
+    details.querySelector('[data-join] [name="room"]').value = invite;
+  }
+  for (const form of details.querySelectorAll('form')) {
+    const creating = form.hasAttribute('data-create');
+    const button = form.querySelector('button');
+    const status = form.querySelector('[role="status"]');
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const name = playerName();
+      if (!name) { askName(); return; }
+      const values = Object.fromEntries(new FormData(form));
+      const option = game === 'go' ? Number(values.option) : values.option || 'standard';
+      const side = values.side === 'random' ? values.side : Number(values.side);
+      const body = {room:values.room,password:values.password,game,name,option,side};
+      button.disabled = true;
+      status.textContent = 'Подключаемся…';
+      try {
+        const {id,key} = await roomRequest(serverOrigin,creating ? '/api/lobby' : '/api/lobby/join',null,body);
+        if (!form.isConnected) return;
+        writeKey(matchSlot({game,origin:serverOrigin,code:id}),key);
+        location.hash = serverMatchRoute(game,id);
+      } catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; }
+    };
+  }
   return details;
 }

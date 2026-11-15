@@ -9,7 +9,12 @@ export function mountReplay(play,live,renderPosition) {
   preview.className = 'replay-position';
   preview.inert = true;
   preview.hidden = true;
-  live.after(preview);
+  const previewBack = document.createElement('button');
+  previewBack.type = 'button';
+  previewBack.className = 'button secondary replay-back';
+  previewBack.textContent = back.textContent;
+  previewBack.hidden = true;
+  live.after(previewBack,preview);
   const list = sidebar.querySelector('ol');
   const back = sidebar.querySelector('button');
   let entries = [];
@@ -17,16 +22,23 @@ export function mountReplay(play,live,renderPosition) {
   function select(index) {
     selected = index;
     live.hidden = index >= 0;
-    preview.hidden = back.hidden = index < 0;
+    preview.hidden = back.hidden = previewBack.hidden = index < 0;
     preview.innerHTML = index < 0 ? '' : renderPosition(entries[index].state);
     for (const button of list.querySelectorAll('button')) {
       button.setAttribute('aria-pressed',String(Number(button.dataset.position) === index));
     }
   }
   back.onclick = () => select(-1);
+  previewBack.onclick = () => {
+    const selectedButton = list.querySelector('[aria-pressed="true"]');
+    select(-1);
+    selectedButton?.focus();
+  };
   list.onclick = event => {
     const button = event.target.closest('[data-position]');
-    if (button) select(Number(button.dataset.position));
+    if (!button) return;
+    select(Number(button.dataset.position));
+    if (getComputedStyle(previewBack).display !== 'none') previewBack.focus();
   };
   return next => {
     entries = next;

@@ -30,7 +30,7 @@ export function renderNetworkGo(root) {
     const canMove = match.ready && !match.ended && !state.ended && match.side === state.turn;
     paintScoring(state,canMove,{forfeited:Boolean(match.forfeits.length),side:match.side,captured:state.captured});
     pass.hidden = !canMove;
-    turn.textContent = match.ended ? 'Партия завершена' : state.ended ? 'Подсчёт очков' : !match.ready ? 'Ждём белых'
+    turn.textContent = match.ended ? 'Партия завершена' : state.ended ? 'Подсчёт очков' : !match.ready ? 'Ожидаем соперника'
       : canMove ? 'Ваш ход' : 'Ходит ' + match.names[state.turn - 1];
     status.textContent = forfeitMessage(match) || (state.points
       ? `Победили ${colors[state.points[1] > state.points[2] ? 1 : 2]}. Счёт ${state.points[1]} : ${state.points[2]}.`

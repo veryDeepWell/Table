@@ -3,6 +3,7 @@ import {roomCode as legacyCode} from '../games/go/room-code.js';
 export {readKey, writeKey} from './seat-storage.js';
 
 export const roomRoute = game => `#/games/${game}/room/`;
+export const serverMatchRoute = (game,id) => roomRoute(game) + 'match/server/' + id;
 export const draftSlot = game => 'table:launch:' + game;
 export const matchSlot = room => `table:match:${room.game}:${room.origin}:${room.code}`;
 

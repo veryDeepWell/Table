@@ -38,7 +38,7 @@ export function cardView({id,name,seats,rules,markup = maid}) {
     const connection = mountMatch(root,id,next => {
       match = next;
       const state = next.state;
-      status.textContent = forfeitMessage(next) || (!next.ready ? `За столом ${next.names.length} из ${seats}`
+      status.textContent = forfeitMessage(next) || (!next.ready ? `За столом ${next.occupied ?? next.names.length} из ${seats}`
         : state.result?.loser ? `Проиграл игрок на месте ${state.result.loser}`
         : state.result ? state.result.winner ? `Победил игрок на месте ${state.result.winner}` : 'Партия завершена'
         : state.turn === next.side ? 'Ваш ход' : `Ход игрока на месте ${state.turn}`);

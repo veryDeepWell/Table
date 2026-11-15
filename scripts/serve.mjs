@@ -4,6 +4,7 @@ import path from 'node:path';
 import {roomApi} from '../server/http.mjs';
 import {createGoRoom} from '../server/go-room.mjs';
 import {createMatch} from '../server/match.mjs';
+import {createRoomHub} from '../server/room-hub.mjs';
 import {networkGames} from '../src/online/games.js';
 import {launcherSource} from './launcher.mjs';
 
@@ -21,7 +22,8 @@ if (matchGame && (!goSecret || !networkGames.includes(matchGame) ||
 }
 const api = matchGame
   ? roomApi({rooms:createMatch(matchGame,goSecret,matchGame === 'go' ? goSize : matchOption)})
-  : goSecret ? roomApi({rooms:createGoRoom(goSecret,goSize)}) : roomApi();
+  : goSecret ? roomApi({rooms:createGoRoom(goSecret,goSize)})
+    : roomApi({origin:process.env.TABLE_ORIGIN || 'https://verydeepwell.github.io',rooms:createRoomHub()});
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 5173);
 const types = {'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript'};

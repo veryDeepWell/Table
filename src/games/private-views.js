@@ -58,7 +58,7 @@ function dominoMarkup(state,side,active) {
 }
 
 function status(match,game) {
-  if (!match.ready) return `Ожидаем игроков · ${match.names.length} из ${game === 'domino' ? 4 : 2}`;
+  if (!match.ready) return `Ожидаем игроков · ${match.occupied ?? match.names.length} из ${game === 'domino' ? 4 : 2}`;
   if (match.forfeits.length) return forfeitMessage(match);
   const state = match.state;
   if (state.result) return game === 'domino' ? `Матч выиграла команда ${state.result.winner}`

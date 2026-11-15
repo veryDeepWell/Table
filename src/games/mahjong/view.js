@@ -75,7 +75,7 @@ function playerMarkup(name, player, index, room) {
 
 function roomMarkup(room) {
   const table = room.table;
-  let title = `За столом ${room.names.length} из 4`;
+  let title = `За столом ${room.occupied ?? room.names.length} из 4`;
   if (table?.phase === 'discard') title = table.turn === room.seat ? 'Ваш ход' : `Ходит ${room.names[table.turn]}`;
   if (table?.phase === 'claim') title = 'Последний сброс';
   if (table?.phase === 'end') {
@@ -128,7 +128,7 @@ export function render(root) {
       const table = match.forfeits.length
         ? {...match.state,phase:'end',result:{forfeits:match.forfeits.map(side => side - 1)},actions:[],claim:null}
         : match.state;
-      room = {shared:true,table,seat:match.side - 1,names:match.names,mode:match.option};
+      room = {shared:true,table,seat:match.side - 1,names:match.names,occupied:match.occupied,mode:match.option};
       panel.innerHTML = roomMarkup(room);
       updateCountdown();
     },showReplay);
