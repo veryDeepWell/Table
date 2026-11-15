@@ -1,6 +1,7 @@
 import {askName,playerName} from './online/profile.js';
 import {games} from './data/games.js';
 import {mountServerStatus} from './online/server.js';
+import {registryOrigin} from './online/registry-config.js';
 const app=document.querySelector('#app');
 const mark='<span class="brand-mark">●<i>○</i></span>';
 function openServerGuide() {
@@ -11,7 +12,8 @@ function openServerGuide() {
     <p>Для сетевой игры сервер комнат должен быть онлайн. Игрокам достаточно браузера.</p>
     <ol><li>Открой игру и выбери «Играть по сети».</li>
     <li>Создай комнату с именем и паролем. Выбери свою сторону или случайную рассадку.</li>
-    <li>Отправь друзьям имя и пароль комнаты. Можно скопировать ссылку, чтобы имя заполнилось автоматически.</li></ol>
+    <li>Сообщи друзьям имя и пароль комнаты. Они смогут войти на этой же странице игры.</li></ol>
+    ${registryOrigin ? '<a class="button secondary" href="./za-stolom-server.py" download>Скачать сервер комнат</a>' : ''}
     <button class="button dark">Закрыть</button></form>`;
   guide.onclose = () => guide.remove();
   document.body.append(guide);

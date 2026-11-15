@@ -3,7 +3,7 @@ import {askName,playerName} from './profile.js';
 import {mountChat} from './chat.js';
 import {downloadHistory} from '../games/history-export.js';
 import {watchOpponentMove} from './move-sound.js';
-import {lobbyRoute,serverOrigin,serverRoomPath} from './server.js';
+import {lobbyRoute,serverOriginSlot,serverRoomPath,validServerOrigin} from './server.js';
 import {seatLabels} from './games.js';
 
 const prefix = game => roomRoute(game) + 'match/';
@@ -49,8 +49,12 @@ export function mountMatch(root,game,paint,showHistory) {
     try { code = decodeURIComponent(encoded); } catch {}
     if (hostSecret) history.replaceState(null,'',prefix(game) + encoded);
   }
-  const room = managed ? {game,origin:serverOrigin,code:hostSecret} : parseInvite(code || '',game);
+  const room = managed ? {game,origin:readKey(serverOriginSlot(hostSecret)),code:hostSecret} : parseInvite(code || '',game);
   if (!room) { status.textContent = 'Проверьте ссылку приглашения.'; return; }
+  if (managed && !validServerOrigin(room.origin)) {
+    status.textContent = 'Откройте «Комнаты» и войдите по имени комнаты и паролю.';
+    return;
+  }
   const slot = matchSlot(room);
   let key = readKey(slot);
   let current;
@@ -81,9 +85,8 @@ export function mountMatch(root,game,paint,showHistory) {
     online = true;
     status.textContent = '';
     join.hidden = true;
-    copy.hidden = !(next.host ?? next.side === 1) || next.ready;
+    copy.hidden = managed || !(next.host ?? next.side === 1) || next.ready;
     if (managed) {
-      input.value = new URL(lobbyRoute(game,next.roomName),location.href).href;
       seatLabel.hidden = false;
       seatLabel.textContent = `Комната ${next.roomName} · Вы: ${seatLabels(game)[next.side - 1]}`;
     }
@@ -141,6 +144,7 @@ export function mountMatch(root,game,paint,showHistory) {
       if (next.closed || next.left) {
         key = null;
         writeKey(slot,null);
+        if (managed) writeKey(serverOriginSlot(room.code),null);
         location.hash = lobbyRoute(game);
       } else show(next);
     }).catch(error => { status.textContent = error.message; });
@@ -169,6 +173,7 @@ export function mountMatch(root,game,paint,showHistory) {
         if (error.status === 401 || managed && error.status === 404) {
           key = null;
           writeKey(slot,null);
+          if (managed) writeKey(serverOriginSlot(room.code),null);
           join.hidden = managed;
           if (managed) copy.hidden = leave.hidden = exportButton.hidden = input.hidden = seatLabel.hidden = true;
         }

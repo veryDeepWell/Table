@@ -1,0 +1,10 @@
+{
+  "name": "table-room-registry",
+  "main": "registry.mjs",
+  "compatibility_date": "2026-11-15",
+  "vars": { "TABLE_ORIGIN": "https://verydeepwell.github.io" },
+  "durable_objects": {
+    "bindings": [{ "name": "REGISTRY", "class_name": "RoomRegistry" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomRegistry"] }]
+}

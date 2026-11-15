@@ -1,7 +1,7 @@
 import {matchSlot,serverMatchRoute,writeKey} from './codes.js';
 import {roomRequest} from './client.js';
 import {askName,playerName} from './profile.js';
-import {lobbyRoute,serverOrigin} from './server.js';
+import {findRoomServer,lobbyRoute,serverOriginSlot} from './server.js';
 import {seatLabels} from './games.js';
 
 const credentials = `<label>Имя комнаты<input name="room" required minlength="3" maxlength="32"
@@ -47,9 +47,11 @@ export function mountLobby(playSection,game) {
       button.disabled = true;
       status.textContent = 'Подключаемся…';
       try {
-        const {id,key} = await roomRequest(serverOrigin,creating ? '/api/lobby' : '/api/lobby/join',null,body);
+        const origin = await findRoomServer();
+        const {id,key} = await roomRequest(origin,creating ? '/api/lobby' : '/api/lobby/join',null,body);
         if (!form.isConnected) return;
-        writeKey(matchSlot({game,origin:serverOrigin,code:id}),key);
+        writeKey(serverOriginSlot(id),origin);
+        writeKey(matchSlot({game,origin,code:id}),key);
         location.hash = serverMatchRoute(game,id);
       } catch (error) { status.textContent = error.message; }
       finally { button.disabled = false; }
