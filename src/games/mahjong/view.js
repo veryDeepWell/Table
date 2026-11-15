@@ -251,11 +251,6 @@ export function render(root) {
     }
   };
   lobby();
-  window.addEventListener('hashchange',() => {
-    if (key && room?.table && room.table.phase !== 'end') {
-      request('/' + room.code + '/leave',key,{}).catch(() => {});
-    }
-  },{once:true});
   try { if (code) key = sessionStorage.getItem(storage + code); } catch {}
   async function poll() {
     if (!area.isConnected) return;

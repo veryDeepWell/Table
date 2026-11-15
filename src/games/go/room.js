@@ -230,8 +230,5 @@ export function renderRoom(root) {
   function schedule() {
     if (area.isConnected) setTimeout(poll,650);
   }
-  window.addEventListener('hashchange',() => {
-    if (key && state?.ready && !state.ended) request('/leave',key,{}).catch(() => {});
-  },{once:true});
   poll();
 }

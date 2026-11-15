@@ -5,7 +5,7 @@ export function mountScoring(area,send) {
   const field = area.querySelector('[data-go-field]');
   const panel = document.createElement('section');
   panel.className = 'go-scoring';
-  area.querySelector('.capture-note').after(panel);
+  area.querySelector('.game-tools').prepend(panel);
   let current;
   let preview = false;
   function paint() {

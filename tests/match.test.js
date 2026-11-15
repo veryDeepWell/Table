@@ -4,6 +4,7 @@ import {createMatch} from '../server/match.mjs';
 import {networkGames} from '../src/online/games.js';
 import {parseInvite,verifyInvite} from '../src/online/codes.js';
 import {createHmac} from 'node:crypto';
+import {disconnectMs} from '../server/presence.mjs';
 
 const host = 'host-test-key';
 const request = (match,path,key,body) => match({
@@ -78,9 +79,12 @@ test('shared rooms: authenticated chat and loss after disconnect',() => {
   assert.equal(request(match,'/chat',guest.key,{text:'  Привет  '}).status,200);
   assert.equal(request(match,'/chat',guest.key,{text:'Слишком быстро'}).status,400);
   assert.deepEqual(request(match,'',host).body.messages,[{id:1,player:2,name:'Гость',text:'Привет',time:1000}]);
-  now += 19_000;
+  now += disconnectMs - 1;
   assert.equal(request(match,'',host).body.ended,false);
-  now += 1000;
+  assert.equal(request(match,'',guest.key).body.ended,false);
+  now += disconnectMs - 1;
+  assert.equal(request(match,'',host).body.ended,false);
+  now += 1;
   const result = request(match,'',host).body;
   assert.equal(result.ended,true);
   assert.deepEqual(result.forfeits,[2]);

@@ -3,7 +3,13 @@ export function mountGameLayout(play,live,history) {
   const field = live.closest('.board-column') || document.createElement('div');
   if (!field.parentElement) field.append(...play.children);
   field.classList.add('game-layout-field');
-  if (panel) live.before(panel);
+  if (panel) {
+    live.before(panel);
+    const tools = document.createElement('div');
+    tools.className = 'game-tools';
+    tools.append(...panel.querySelectorAll(':scope > :is([data-choices], .game-actions, .save-note, .go-backup, [data-history-export])'));
+    field.append(tools);
+  }
 
   const chat = document.createElement('aside');
   chat.className = 'game-layout-chat';

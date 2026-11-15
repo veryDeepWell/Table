@@ -197,7 +197,7 @@
 .cover-shogi .cover-pieces b { background: #bd925d; color: #38281a; padding: 15% 6% 6%; clip-path: polygon(50% 0,85% 16%,100% 100%,0 100%,15% 16%); font-size: .65em; }
 
 .classic-panel #status { min-height: 44px; }
-.classic-panel [data-choices] > .button { width: 100%; }
+.game-tools [data-choices] > .button { width: 100%; }
 .table-grid {
   display: grid;
   grid-template-columns: repeat(var(--size), minmax(0,1fr));
@@ -706,13 +706,22 @@ header nav { align-items: center; gap: clamp(12px,2.5vw,28px); }
   border-block: 1px solid var(--line);
   background: none;
 }
-.game-layout .game-panel h2 { margin: 6px 0; font-size: 20px; }
-.game-layout .game-panel #status { min-height: 0; }
+.game-layout .game-panel h2 {
+  display: block;
+  margin: 6px 0;
+  font-size: 20px;
+  block-size: 1lh;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.game-layout .game-panel h2 .player-stone { vertical-align: middle; margin-inline-end: 4px; }
+.game-layout .game-panel #status { min-height: 0; block-size: 2lh; overflow-y: auto; }
 .game-layout .game-panel .player { padding: 6px 0; }
-.game-layout .game-panel .game-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.game-layout .game-panel .button { padding: 8px 12px; }
-.game-layout .game-panel .save-note { margin: 8px 0 2px; }
-.game-layout .go-backup { margin: 0; }
+.game-tools .game-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.game-tools .button { padding: 8px 12px; }
+.game-tools .save-note { margin: 8px 0 2px; }
+.game-tools .go-backup { margin: 0; }
 .game-layout .game-panel:has(.capture-note) {
   display: grid;
   grid-template-columns: repeat(2,minmax(0,1fr));
@@ -721,6 +730,13 @@ header nav { align-items: center; gap: clamp(12px,2.5vw,28px); }
 .game-layout .game-panel:has(.capture-note) > :not(.player) { grid-column: 1 / -1; }
 .game-layout .capture-note { margin-top: 4px; }
 .match-controls { margin-top: 18px; }
+.match-controls p[role="status"] {
+  display: block;
+  block-size: 2lh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+html { scrollbar-gutter: stable; }
 .move-history { width: 100%; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 5px; }
 .move-history h2 { margin: 0 0 7px; font-size: 18px; letter-spacing: -.3px; }
 .move-history ol { margin: 0; padding: 0; list-style: none; max-height: 360px; overflow: auto; }
@@ -918,7 +934,7 @@ header nav { align-items: center; gap: clamp(12px,2.5vw,28px); }
   .search input, .profile-dialog input, .match-chat input,
   .match-controls input, .go-room-invite, .mj-lobby input,
   .match-lobby-card textarea, main select { font-size: 16px; }
-  .button, .game-layout .game-panel .text-button,
+  .button, .game-tools .text-button,
   .move-history button, .board-heading select {
     min-height: 44px;
   }
@@ -926,8 +942,8 @@ header nav { align-items: center; gap: clamp(12px,2.5vw,28px); }
   .board-heading { flex-wrap: wrap; gap: 6px 12px; margin-bottom: 10px; }
   .coordinate-frame { --axis-size: 15px; }
   .coordinate-go { --go-padding: 5px; --go-border: 4px; }
-  .game-layout .game-panel .game-actions { gap: 6px 10px; }
-  .game-layout .game-panel .go-backup .text-button { text-align: left; }
+  .game-tools .game-actions { gap: 6px 10px; }
+  .game-tools .go-backup .text-button { text-align: left; }
   .board-caption { flex-wrap: wrap; gap: 4px; }
   .game-layout .move-history, .game-layout-chat .match-chat,
   .match-lobby-card, .mj-lobby form { padding: 12px; }

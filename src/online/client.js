@@ -153,12 +153,21 @@ export function mountMatch(root,game,paint,showHistory) {
     try { downloadHistory(game,await api('/history')); }
     catch (error) { status.textContent = error.message; }
   };
+  let pollTimer;
+  let polling = false;
+  const wake = () => { if (!document.hidden) poll(); };
   window.addEventListener('hashchange',() => {
+    clearTimeout(pollTimer);
     document.removeEventListener('table:profile',profile);
-    if (key && current?.ready && !current.ended) api('/leave',{}).catch(() => {});
+    document.removeEventListener('visibilitychange',wake);
+    window.removeEventListener('pageshow',wake);
   },{once:true});
+  document.addEventListener('visibilitychange',wake);
+  window.addEventListener('pageshow',wake);
   async function poll() {
-    if (!panel.isConnected) return;
+    if (!panel.isConnected || polling) return;
+    clearTimeout(pollTimer);
+    polling = true;
     if (key && !join.disabled) await queue(async () => {
       try {
         let next = await api('');
@@ -180,7 +189,8 @@ export function mountMatch(root,game,paint,showHistory) {
         status.textContent = error.message;
       }
     });
-    if (panel.isConnected) setTimeout(poll,700);
+    polling = false;
+    if (panel.isConnected) pollTimer = setTimeout(poll,700);
   }
   async function connect() {
     if (!managed && hostSecret && /^[a-f0-9]{64}$/.test(hostSecret) &&
