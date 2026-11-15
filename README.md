@@ -49,7 +49,7 @@ python za-stolom-server.py
 
 ## GitHub Pages
 
-В настройках репозитория выберите **Pages → Source → GitHub Actions**. После отправки в `main` workflow `.github/workflows/pages.yml` проверит движок, соберёт сайт и опубликует Pages. Если основная ветка называется иначе, измените `branches` в workflow. Все пути относительные, маршруты используют hash: сайт работает и в подпапке репозитория. Публикация из текущей рабочей копии не выполнялась.
+В настройках репозитория выберите **Pages → Source → GitHub Actions**. После отправки в `main` workflow `.github/workflows/pages.yml` проверит движок, соберёт сайт и опубликует Pages. Если Pages публикует корень ветки напрямую, запустите `npm.cmd run build -- --branch-pages` и добавьте обновлённый `za-stolom-server.py` в коммит. В таком режиме адрес Worker берётся из `src/online/registry-config.js`. Все пути относительные, маршруты используют hash, поэтому сайт работает в подпапке репозитория.
 
 ## Архитектура
 

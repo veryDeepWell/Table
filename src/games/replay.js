@@ -5,6 +5,8 @@ export function mountReplay(play,live,renderPosition) {
   sidebar.className = 'move-history';
   sidebar.innerHTML = '<h2>История ходов</h2><button class="text-button" hidden>К текущей позиции</button><ol></ol><p>Ходов пока нет.</p>';
   mountGameLayout(play,live,sidebar);
+  const list = sidebar.querySelector('ol');
+  const back = sidebar.querySelector('button');
   const preview = document.createElement('div');
   preview.className = 'replay-position';
   preview.inert = true;
@@ -15,8 +17,6 @@ export function mountReplay(play,live,renderPosition) {
   previewBack.textContent = back.textContent;
   previewBack.hidden = true;
   live.after(previewBack,preview);
-  const list = sidebar.querySelector('ol');
-  const back = sidebar.querySelector('button');
   let entries = [];
   let selected = -1;
   function select(index) {
