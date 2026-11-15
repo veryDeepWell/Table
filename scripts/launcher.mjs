@@ -22,14 +22,16 @@ export async function hostLauncherSource(registryOrigin) {
   return `import base64
 import gzip
 import json
+import os
 from pathlib import Path
 import runpy
 import sys
 from tempfile import TemporaryDirectory
+import traceback
 
 BUNDLE = "${await bundle(['host_rooms.py','play_go.py'])}"
 
-if __name__ == "__main__":
+def launch():
     with TemporaryDirectory(prefix="za-stolom-") as folder:
         root = Path(folder)
         files = json.loads(gzip.decompress(base64.b64decode(BUNDLE)))
@@ -41,5 +43,24 @@ if __name__ == "__main__":
         runpy.run_path(str(root / "host_rooms.py"),
                        init_globals={"DEFAULT_REGISTRY": ${registryOrigin ? JSON.stringify(registryOrigin) : 'None'}},
                        run_name="__main__")
+
+
+if __name__ == "__main__":
+    exit_code = 0
+    try:
+        launch()
+    except SystemExit as error:
+        exit_code = error.code
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        traceback.print_exc()
+        exit_code = 1
+    if exit_code and os.name == "nt" and sys.stdin.isatty():
+        try:
+            input("Нажмите Enter, чтобы закрыть окно…")
+        except (EOFError, KeyboardInterrupt):
+            pass
+    sys.exit(exit_code)
 `;
 }

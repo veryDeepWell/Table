@@ -16,6 +16,7 @@ from play_go import LOCAL_URL, QUICK_URL, start, stop, wait_for_url
 
 
 SITE = "https://verydeepwell.github.io"
+USER_AGENT = "ZaStolom-RoomHost/1.0"
 WORKER_URL = re.compile(r"https://[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev")
 CONFIG = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".config") / "ZaStolom" / "room-host.json"
 
@@ -42,7 +43,8 @@ def registry_request(registry, key, method, session, origin=None):
     if origin:
         data["origin"] = origin
     request = Request(registry + "/host", method=method, data=json.dumps(data).encode(),
-                      headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+                      headers={"Authorization": "Bearer " + key, "Content-Type": "application/json",
+                               "User-Agent": USER_AGENT})
     with urlopen(request, timeout=5) as response:
         if not json.load(response).get("ok"):
             raise ValueError("Реестр вернул неожиданный ответ.")
@@ -52,7 +54,7 @@ def verify_tunnel(origin, process):
     limit = time.monotonic() + 35
     while time.monotonic() < limit and process.poll() is None:
         try:
-            request = Request(origin + "/api/lobby/status", headers={"Origin": SITE})
+            request = Request(origin + "/api/lobby/status", headers={"Origin": SITE, "User-Agent": USER_AGENT})
             with urlopen(request, timeout=4) as response:
                 if (response.headers.get("Access-Control-Allow-Origin") == SITE
                         and json.load(response).get("service") == "table-rooms"):
@@ -100,7 +102,7 @@ def main():
                     last_success = now
                     next_update = now + 12
                 except OSError as error:
-                    if isinstance(error, HTTPError) and error.code in (400, 401, 409):
+                    if isinstance(error, HTTPError) and error.code in (400, 401, 403, 409):
                         raise
                     if time.monotonic() - last_success >= 35:
                         raise RuntimeError("Связь с реестром серверов потеряна.") from error
@@ -111,6 +113,7 @@ def main():
         return 0
     except HTTPError as error:
         messages = {401: "Ключ запуска не подходит. Запустите файл с --setup.",
+                    403: "Cloudflare отклонил запрос к реестру (HTTP 403).",
                     409: "Другой сервер комнат уже работает."}
         print(messages.get(error.code, f"Реестр ответил HTTP {error.code}."), file=sys.stderr)
         return 1
