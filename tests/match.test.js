@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createMatch} from '../server/match.mjs';
 import {networkGames} from '../src/online/games.js';
+import {matchGames} from '../server/match-games.mjs';
 import {parseInvite,verifyInvite} from '../src/online/codes.js';
 import {createHmac} from 'node:crypto';
 import {disconnectMs} from '../server/presence.mjs';
@@ -48,7 +49,7 @@ test('four domino seats each get seven distinct tiles and only the opening seat 
   assert.ok(archive.positions.every(entry => !('hands' in entry.position) && entry.position.hand.length === 7));
 });
 
-for (const game of networkGames.filter(id => !['mahjong','battleship','domino','old-maid','eights','hearts','durak','thousand','holdem'].includes(id))) {
+for (const game of networkGames.filter(id => !matchGames[id].hidden)) {
   test(`${game}: shared room validates turns and synchronizes a move`,() => {
     const match = createMatch(game,host,game === 'go' ? 9 : 'standard');
     const move = {action:game === 'backgammon' ? 'roll' : 'play',index:0,point:0,version:0};

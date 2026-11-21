@@ -86,6 +86,7 @@ export function renderTable(root, game) {
   const playSection = root.querySelector('#play');
   const showReplay = mountReplay(playSection,board,position => (game.board || gridBoard)(game,position,[],null));
   function describeMove(move) {
+    if (game.describeMove) return game.describeMove(move);
     if (game.id === 'janggi' && move.from === move.to) return 'Пас';
     const point = index => {
       if (game.notation) return game.notation(index);
@@ -202,6 +203,10 @@ export function renderTable(root, game) {
       if (!state.result && game.engine.finish && confirm('Оба игрока согласны закончить партию?')) {
         commit(game.engine.finish(state),'finish');
       }
+      return;
+    } else if (button.dataset.moveIndex !== undefined) {
+      const move = legal[Number(button.dataset.moveIndex)];
+      if (move) play(move);
       return;
     } else if (button.dataset.choice !== undefined) {
       play(pending[Number(button.dataset.choice)]);

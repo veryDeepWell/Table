@@ -45,4 +45,20 @@ export const games = [
   {id:'hnefatafl',name:'Хнефатафл',aliases:'тафл hnefatafl',category:'Стратегия',variant:'Выход в угол',
     art:'♔',icons:['♔','●'],time:'15–35 мин',description:'Выведите короля в угол или окружите его.',
     load:() => import('../games/variant-views.js').then(module => module.variantView('hnefatafl'))},
+  ...[
+    ['pai-sho','Пай-шо','Skud Pai Sho','Аватар','✿','❀','Замкните кольцо гармоний вокруг центра.'],
+    ['gungi','Гунги','Gungi · UMJ 2022','Hunter × Hunter','帥','謀','Создавайте башни и поставьте мат маршалу.'],
+    ['tak','Так','Tak · 5 × 5','Хроника Убийцы Короля','◆','▰','Постройте дорогу и управляйте стопками камней.'],
+  ].map(([id,name,aliases,variant,art,icon,description])=>({
+    id,name,aliases,variant,art,icons:[art,icon],description,category:'Стратегия',time:'20–60 мин',
+    load:()=>import('../games/fiction-views.js').then(module=>module.fictionView(id)),
+  })),
+  ...[
+    ['pai-gow','Пай-гоу','Pai Gow · 32 кости','2 игрока','⚅','⚃','Разделите четыре кости на две сильные пары.'],
+    ['baccarat','Баккара','Punto Banco','4 игрока','9','♠','Выберите руку и наблюдайте за раздачей.'],
+    ['sabacc','Сабакк','Hasbro · раздача','4 игрока','0','±','Приблизьтесь к нулю и переживите смену карт.'],
+  ].map(([id,name,variant,players,art,icon,description])=>({
+    id,name,aliases:variant,variant,players,art,icons:[art,icon],description,category:'Онлайн',time:'10–25 мин',
+    load:()=>import('../games/casino-views.js').then(module=>module.casinoView(id)),
+  })),
 ];

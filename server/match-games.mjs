@@ -13,6 +13,10 @@ import * as xiangqi from '../src/games/xiangqi/engine.js';
 import {oldMaid,eights,hearts,durak,thousand} from './card-games.mjs';
 import {holdem} from './holdem.mjs';
 import {janggi,hnefatafl} from '../src/games/variant-engines.js';
+import * as paiSho from '../src/games/pai-sho/engine.js';
+import * as gungi from '../src/games/gungi/engine.js';
+import * as tak from '../src/games/tak/engine.js';
+import {paiGow,baccarat,sabacc} from './casino-games.mjs';
 
 function boardGame(engine) {
   return {
@@ -69,6 +73,8 @@ export const matchGames = {
   'old-maid':oldMaid(),
   eights,hearts,durak,thousand,holdem,
   janggi:boardGame(janggi),hnefatafl:boardGame(hnefatafl),
+  'pai-sho':boardGame(paiSho),gungi:boardGame(gungi),tak:boardGame(tak),
+  'pai-gow':paiGow,baccarat,sabacc,
   battleship:{...battleship,hidden:true}, domino:{...domino,hidden:true},
   mahjong:{
     seats:4,hidden:true,create:mahjong.deal,ended:state => state.phase === 'end',
